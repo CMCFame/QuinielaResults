@@ -24,193 +24,137 @@ import json
 import base64
 import traceback
 import random
+from PIL import Image
+from io import BytesIO
+import pytesseract
+import cv2
+import numpy as np
 
 # ============================================================================
-# SCRAPING UTILITIES
+# OCR UTILITIES
 # ============================================================================
-def get_random_user_agent():
+def download_image(url):
     """
-    Return a random user agent from a list of modern browser user agents
+    Download an image from a URL
     """
-    user_agents = [
-        # Chrome on Windows
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
-        # Chrome on Mac
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
-        # Firefox on Windows
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/109.0',
-        # Firefox on Linux
-        'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0',
-        # Safari on Mac
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-        # Edge on Windows
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36 Edg/109.0.1518.55'
-    ]
-    return random.choice(user_agents)
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        img = Image.open(BytesIO(response.content))
+        return img
+    except Exception as e:
+        st.error(f"Error downloading image: {str(e)}")
+        return None
 
-def get_complete_headers():
+def preprocess_image(image):
     """
-    Return complete browser-like headers with a random user agent
+    Preprocess the image for better OCR results
     """
-    user_agent = get_random_user_agent()
+    # Convert PIL image to OpenCV format
+    img = np.array(image)
     
-    headers = {
-        'User-Agent': user_agent,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        'Accept-Language': 'en-US,en;q=0.9,es;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Referer': 'https://www.google.com/',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'cross-site',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1',
-        'Pragma': 'no-cache',
-        'Cache-Control': 'no-cache',
-        'DNT': '1',  # Do Not Track
-    }
+    # Convert to grayscale
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     
-    return headers
+    # Apply threshold to get binary image
+    _, binary = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+    
+    # Return as PIL image
+    return Image.fromarray(binary)
 
-def fetch_with_retry(url, max_retries=3, delay=2):
+def extract_text_from_image(image):
     """
-    Fetch a URL with retries and different headers
+    Extract text from image using OCR
     """
-    for attempt in range(max_retries):
-        try:
-            # Get fresh headers for each attempt
-            headers = get_complete_headers()
-            
-            # Create a session for cookies support
-            session = requests.Session()
-            
-            # Add a small delay between retries
-            if attempt > 0:
-                time.sleep(delay)
-            
-            # Make the request
-            response = session.get(url, headers=headers, timeout=15)
-            
-            # If successful, return the response
-            if response.status_code == 200:
-                return response
-            
-            st.info(f"Attempt {attempt+1} failed with status code {response.status_code}. Trying again with different headers...")
+    try:
+        # Preprocess the image
+        processed_image = preprocess_image(image)
         
-        except Exception as e:
-            st.warning(f"Error on attempt {attempt+1}: {str(e)}")
-    
-    # If all retries fail, return None
-    return None
+        # Use pytesseract to extract text
+        text = pytesseract.image_to_string(processed_image, lang='spa')
+        
+        return text
+    except Exception as e:
+        st.error(f"Error extracting text: {str(e)}")
+        return None
 
-# ============================================================================
-# UTILITY FUNCTIONS
-# ============================================================================
-def get_matches_from_oddschecker(progol_number):
+def parse_matches_from_ocr_text(text):
     """
-    Scrape match data from oddschecker.com for the given Progol contest number
+    Parse match information from OCR text
     """
-    url = f"https://www.oddschecker.com/es/pronosticos/futbol/predicciones-progol-revancha-quiniela-esta-semana-{progol_number}"
+    if not text:
+        return None
     
-    # Attempt to fetch the page with retries
-    response = fetch_with_retry(url)
+    # Regular expression to find match patterns
+    # Looking for patterns like "Team1 vs Team2" or "Team1 - Team2"
+    match_pattern = r'([A-Za-z0-9\s\.]+)(?:\s+vs\.?\s+|\s+-\s+)([A-Za-z0-9\s\.]+)'
     
-    if response is None:
-        st.error(f"Failed to fetch data from oddschecker after multiple attempts.")
+    matches = re.findall(match_pattern, text)
+    
+    if not matches:
+        return None
+    
+    # Create match data
+    match_data = []
+    for local, visitante in matches:
+        match_data.append({
+            'local': local.strip(),
+            'visitante': visitante.strip(),
+            'odds_l': "2.0",  # Default odds
+            'odds_e': "3.0",  # Default odds
+            'odds_v': "2.0",  # Default odds
+            'resultado': '',
+            'status': 'Pendiente'
+        })
+    
+    return match_data
+
+def get_matches_from_loterianacional():
+    """
+    Get match data from Lotería Nacional website using OCR
+    """
+    # URL of the image
+    url = "https://www.loterianacional.gob.mx/Progol/Quiniela"
+    
+    # Download the image
+    st.info("Descargando imagen desde Lotería Nacional...")
+    image = download_image(url)
+    
+    if image is None:
         return None, None
     
-    # Parse the HTML with BeautifulSoup
-    soup = BeautifulSoup(response.text, 'html.parser')
+    # Display the image
+    st.image(image, caption="Imagen descargada de Lotería Nacional", use_column_width=True)
     
-    # Find the tables for Progol and Revancha
-    tables = soup.find_all('table')
+    # Extract text from image
+    st.info("Procesando imagen con OCR...")
+    text = extract_text_from_image(image)
     
-    if len(tables) < 1:
-        st.warning("No se encontraron tablas en la página")
+    if text is None:
         return None, None
     
-    # Process Progol table
-    progol_matches = []
+    # Show extracted text for debugging
+    with st.expander("Texto extraído de la imagen"):
+        st.text(text)
     
-    try:
-        # Look for the first table with match data
-        for table in tables:
-            # Check if this looks like a match table
-            rows = table.find_all('tr')
-            if len(rows) < 2:  # Need at least header + one row
-                continue
-                
-            header_row = rows[0]
-            
-            # Process data rows
-            data_rows = rows[1:]  # Skip header row
-            
-            for row in data_rows:
-                cols = row.find_all('td')
-                if len(cols) >= 5:
-                    local = cols[0].text.strip()
-                    visitante = cols[1].text.strip()
-                    odds_l = cols[2].text.strip()
-                    odds_e = cols[3].text.strip()
-                    odds_v = cols[4].text.strip()
-                    
-                    progol_matches.append({
-                        'local': local,
-                        'visitante': visitante,
-                        'odds_l': odds_l,
-                        'odds_e': odds_e,
-                        'odds_v': odds_v,
-                        'resultado': '',
-                        'status': 'Pendiente'
-                    })
-            
-            # If we found matches in this table, break
-            if progol_matches:
-                break
-    except Exception as e:
-        st.error(f"Error procesando tabla Progol: {str(e)}")
+    # Parse matches from text
+    st.info("Analizando datos extraídos...")
+    matches = parse_matches_from_ocr_text(text)
     
-    # Process Revancha table if exists (should be the second match table)
-    revancha_matches = []
+    if matches is None or len(matches) == 0:
+        st.error("No se pudieron identificar partidos en la imagen")
+        return None, None
     
-    try:
-        # If we found one table with matches, look for another
-        if progol_matches and len(tables) > 1:
-            # Start from the second table
-            for table in tables[1:]:
-                # Check if this looks like a match table
-                rows = table.find_all('tr')
-                if len(rows) < 2:  # Need at least header + one row
-                    continue
-                    
-                # Process data rows
-                data_rows = rows[1:]  # Skip header row
-                
-                for row in data_rows:
-                    cols = row.find_all('td')
-                    if len(cols) >= 5:
-                        local = cols[0].text.strip()
-                        visitante = cols[1].text.strip()
-                        odds_l = cols[2].text.strip()
-                        odds_e = cols[3].text.strip()
-                        odds_v = cols[4].text.strip()
-                        
-                        revancha_matches.append({
-                            'local': local,
-                            'visitante': visitante,
-                            'odds_l': odds_l,
-                            'odds_e': odds_e,
-                            'odds_v': odds_v,
-                            'resultado': '',
-                            'status': 'Pendiente'
-                        })
-                
-                # If we found matches in this table, break
-                if revancha_matches:
-                    break
-    except Exception as e:
-        st.error(f"Error procesando tabla Revancha: {str(e)}")
+    # Separate into Progol and Revancha
+    # Assuming first 14 matches are Progol and the rest are Revancha
+    if len(matches) >= 14:
+        progol_matches = matches[:14]
+        revancha_matches = matches[14:] if len(matches) > 14 else []
+    else:
+        progol_matches = matches
+        revancha_matches = []
+    
+    st.success(f"Se encontraron {len(progol_matches)} partidos de Progol y {len(revancha_matches)} partidos de Revancha")
     
     return progol_matches, revancha_matches
 
@@ -347,308 +291,76 @@ def update_match_results():
                 st.session_state.notifications.append(notification)
 
 # ============================================================================
-# DIRECT HTML SCRAPING
+# MANUAL MATCH INPUT
 # ============================================================================
-def scrape_from_html_file():
+def manual_match_input():
     """
-    Alternative approach: manually save the HTML from oddschecker.com and upload it
+    Allow manual input of match data
     """
-    st.subheader("Cargar HTML manualmente")
-    st.write("""
-    Si los métodos automáticos de scraping no funcionan, puedes seguir estos pasos:
-    1. Visita la página de oddschecker.com en tu navegador
-    2. Guarda la página completa (Ctrl+S en la mayoría de navegadores)
-    3. Sube el archivo HTML aquí
-    """)
+    st.subheader("Ingreso Manual de Partidos")
+    st.write("Ingresa manualmente los partidos si la extracción automática no funciona correctamente.")
     
-    uploaded_file = st.file_uploader("Sube el archivo HTML de oddschecker", type=['html', 'htm'])
+    # Number of matches to input
+    num_progol = st.number_input("Número de partidos Progol:", min_value=1, max_value=14, value=14)
+    num_revancha = st.number_input("Número de partidos Revancha:", min_value=0, max_value=7, value=0)
     
-    if uploaded_file is not None:
-        try:
-            # Read the HTML content
-            html_content = uploaded_file.read().decode('utf-8')
+    # Create containers for match inputs
+    progol_matches = []
+    revancha_matches = []
+    
+    if num_progol > 0:
+        st.write("### Partidos Progol")
+        for i in range(num_progol):
+            col1, col2 = st.columns(2)
+            with col1:
+                local = st.text_input(f"Equipo Local #{i+1}:", key=f"progol_local_{i}")
+            with col2:
+                visitante = st.text_input(f"Equipo Visitante #{i+1}:", key=f"progol_visit_{i}")
             
-            # Parse with BeautifulSoup
-            soup = BeautifulSoup(html_content, 'html.parser')
+            if local and visitante:
+                progol_matches.append({
+                    'local': local,
+                    'visitante': visitante,
+                    'odds_l': "2.0",  # Default odds
+                    'odds_e': "3.0",  # Default odds
+                    'odds_v': "2.0",  # Default odds
+                    'resultado': '',
+                    'status': 'Pendiente'
+                })
+    
+    if num_revancha > 0:
+        st.write("### Partidos Revancha")
+        for i in range(num_revancha):
+            col1, col2 = st.columns(2)
+            with col1:
+                local = st.text_input(f"Equipo Local #{i+1}:", key=f"revancha_local_{i}")
+            with col2:
+                visitante = st.text_input(f"Equipo Visitante #{i+1}:", key=f"revancha_visit_{i}")
             
-            # Find tables and extract data
-            tables = soup.find_all('table')
+            if local and visitante:
+                revancha_matches.append({
+                    'local': local,
+                    'visitante': visitante,
+                    'odds_l': "2.0",  # Default odds
+                    'odds_e': "3.0",  # Default odds
+                    'odds_v': "2.0",  # Default odds
+                    'resultado': '',
+                    'status': 'Pendiente'
+                })
+    
+    if st.button("Guardar Partidos Manuales"):
+        if progol_matches:
+            st.session_state.progol_matches = pd.DataFrame(progol_matches)
+            st.success(f"Se guardaron {len(progol_matches)} partidos de Progol")
+        
+        if revancha_matches:
+            st.session_state.revancha_matches = pd.DataFrame(revancha_matches)
+            st.success(f"Se guardaron {len(revancha_matches)} partidos de Revancha")
             
-            if len(tables) < 1:
-                st.error("No se encontraron tablas en el archivo HTML")
-                return None, None
-            
-            # Process matches using the same logic as before
-            progol_matches = []
-            revancha_matches = []
-            
-            # Process first table (Progol)
-            if len(tables) > 0:
-                rows = tables[0].find_all('tr')[1:]  # Skip header
-                for row in rows:
-                    cols = row.find_all('td')
-                    if len(cols) >= 5:
-                        local = cols[0].text.strip()
-                        visitante = cols[1].text.strip()
-                        odds_l = cols[2].text.strip()
-                        odds_e = cols[3].text.strip()
-                        odds_v = cols[4].text.strip()
-                        
-                        progol_matches.append({
-                            'local': local,
-                            'visitante': visitante,
-                            'odds_l': odds_l,
-                            'odds_e': odds_e,
-                            'odds_v': odds_v,
-                            'resultado': '',
-                            'status': 'Pendiente'
-                        })
-            
-            # Process second table (Revancha)
-            if len(tables) > 1:
-                rows = tables[1].find_all('tr')[1:]  # Skip header
-                for row in rows:
-                    cols = row.find_all('td')
-                    if len(cols) >= 5:
-                        local = cols[0].text.strip()
-                        visitante = cols[1].text.strip()
-                        odds_l = cols[2].text.strip()
-                        odds_e = cols[3].text.strip()
-                        odds_v = cols[4].text.strip()
-                        
-                        revancha_matches.append({
-                            'local': local,
-                            'visitante': visitante,
-                            'odds_l': odds_l,
-                            'odds_e': odds_e,
-                            'odds_v': odds_v,
-                            'resultado': '',
-                            'status': 'Pendiente'
-                        })
-            
-            if progol_matches:
-                st.session_state.progol_matches = pd.DataFrame(progol_matches)
-                st.success(f"Se cargaron {len(progol_matches)} partidos de Progol")
-            else:
-                st.error("No se pudieron cargar los partidos de Progol")
-            
-            if revancha_matches:
-                st.session_state.revancha_matches = pd.DataFrame(revancha_matches)
-                st.success(f"Se cargaron {len(revancha_matches)} partidos de Revancha")
-            else:
-                st.warning("No se pudieron cargar los partidos de Revancha")
-            
-            return progol_matches, revancha_matches
-            
-        except Exception as e:
-            st.error(f"Error procesando el archivo HTML: {str(e)}")
-            return None, None
+        # Return the matches for use
+        return progol_matches, revancha_matches
     
     return None, None
-
-# ============================================================================
-# DIRECT URL FETCH
-# ============================================================================
-def fetch_url_directly():
-    """
-    Alternative approach: directly entering a URL to scrape data from
-    """
-    st.subheader("Obtener datos directamente de una URL")
-    
-    url = st.text_input(
-        "URL de la página de Progol",
-        value="https://www.oddschecker.com/es/pronosticos/futbol/predicciones-progol-revancha-quiniela-esta-semana-2274"
-    )
-    
-    if st.button("Obtener Datos de URL"):
-        try:
-            with st.spinner("Obteniendo datos..."):
-                # Attempt to fetch with retries
-                response = fetch_with_retry(url)
-                
-                if response is None:
-                    st.error("No se pudo obtener datos después de varios intentos")
-                    return
-                
-                html_content = response.text
-                
-                # Parse the data from HTML
-                soup = BeautifulSoup(html_content, 'html.parser')
-                tables = soup.find_all('table')
-                
-                if len(tables) < 1:
-                    st.error("No se encontraron tablas en la página")
-                    return
-                
-                # Process matches from tables
-                progol_matches = []
-                revancha_matches = []
-                
-                # First table (Progol)
-                if len(tables) > 0:
-                    table = tables[0]
-                    rows = table.find_all('tr')
-                    
-                    if len(rows) > 1:  # We need at least a header and one data row
-                        # Process data rows (skip header)
-                        for row in rows[1:]:
-                            cols = row.find_all('td')
-                            if len(cols) >= 5:
-                                local = cols[0].text.strip()
-                                visitante = cols[1].text.strip()
-                                odds_l = cols[2].text.strip()
-                                odds_e = cols[3].text.strip()
-                                odds_v = cols[4].text.strip()
-                                
-                                progol_matches.append({
-                                    'local': local,
-                                    'visitante': visitante,
-                                    'odds_l': odds_l,
-                                    'odds_e': odds_e,
-                                    'odds_v': odds_v,
-                                    'resultado': '',
-                                    'status': 'Pendiente'
-                                })
-                
-                # Second table (Revancha)
-                if len(tables) > 1:
-                    table = tables[1]
-                    rows = table.find_all('tr')
-                    
-                    if len(rows) > 1:  # We need at least a header and one data row
-                        # Process data rows (skip header)
-                        for row in rows[1:]:
-                            cols = row.find_all('td')
-                            if len(cols) >= 5:
-                                local = cols[0].text.strip()
-                                visitante = cols[1].text.strip()
-                                odds_l = cols[2].text.strip()
-                                odds_e = cols[3].text.strip()
-                                odds_v = cols[4].text.strip()
-                                
-                                revancha_matches.append({
-                                    'local': local,
-                                    'visitante': visitante,
-                                    'odds_l': odds_l,
-                                    'odds_e': odds_e,
-                                    'odds_v': odds_v,
-                                    'resultado': '',
-                                    'status': 'Pendiente'
-                                })
-                
-                # Save the matches to session state
-                if progol_matches:
-                    st.session_state.progol_matches = pd.DataFrame(progol_matches)
-                    st.success(f"Se cargaron {len(progol_matches)} partidos de Progol")
-                else:
-                    st.error("No se pudieron cargar los partidos de Progol")
-                
-                if revancha_matches:
-                    st.session_state.revancha_matches = pd.DataFrame(revancha_matches)
-                    st.success(f"Se cargaron {len(revancha_matches)} partidos de Revancha")
-                else:
-                    st.warning("No se pudieron cargar los partidos de Revancha")
-        except Exception as e:
-            st.error(f"Error: {str(e)}")
-            st.code(traceback.format_exc())
-
-# ============================================================================
-# DEBUG FUNCTIONS
-# ============================================================================
-def debug_mode():
-    """
-    Debug mode that shows detailed information about the current state and errors
-    """
-    st.header("Debug Information")
-    
-    # System information
-    st.subheader("System Information")
-    st.write(f"Current Time: {datetime.now()}")
-    
-    # Session state
-    st.subheader("Session State Variables")
-    for key, value in st.session_state.items():
-        if key == 'progol_matches' or key == 'revancha_matches':
-            if value is not None:
-                st.write(f"{key}: DataFrame with {len(value)} rows")
-            else:
-                st.write(f"{key}: None")
-        else:
-            st.write(f"{key}: {value}")
-    
-    # Test connection to oddschecker
-    st.subheader("Test Connection to oddschecker.com")
-    if st.button("Test Connection"):
-        with st.spinner("Testing connection with multiple user agents..."):
-            success = False
-            for i in range(3):  # Try 3 times
-                try:
-                    headers = get_complete_headers()
-                    st.write(f"Attempt {i+1} with User-Agent: {headers['User-Agent']}")
-                    
-                    session = requests.Session()
-                    response = session.get("https://www.oddschecker.com", headers=headers, timeout=10)
-                    
-                    st.write(f"Status Code: {response.status_code}")
-                    
-                    if response.status_code == 200:
-                        st.success(f"Connection successful on attempt {i+1}!")
-                        st.write("Headers that worked:")
-                        st.json(headers)
-                        success = True
-                        break
-                    else:
-                        st.warning(f"Attempt {i+1} failed with status code {response.status_code}")
-                        time.sleep(2)  # Wait before next attempt
-                except Exception as e:
-                    st.error(f"Error on attempt {i+1}: {str(e)}")
-                    st.code(traceback.format_exc())
-            
-            if not success:
-                st.error("All connection attempts failed")
-    
-    # Add direct URL fetch method
-    fetch_url_directly()
-                
-    # File uploader for direct HTML processing
-    st.subheader("Process HTML directly")
-    uploaded_file = st.file_uploader("Upload HTML from oddschecker.com", type=["html", "htm"])
-    
-    if uploaded_file is not None:
-        try:
-            html_content = uploaded_file.read().decode('utf-8')
-            st.write(f"File size: {len(html_content)} characters")
-            
-            # Find tables in HTML
-            soup = BeautifulSoup(html_content, 'html.parser')
-            tables = soup.find_all('table')
-            st.write(f"Found {len(tables)} tables in the HTML")
-            
-            # Display header of first table if available
-            if len(tables) > 0:
-                st.write("First table header:")
-                header_row = tables[0].find('tr')
-                if header_row:
-                    st.write(header_row.text)
-        except Exception as e:
-            st.error(f"Error processing HTML: {str(e)}")
-    
-    # Error simulation for testing
-    st.subheader("Error Handling Tests")
-    if st.button("Simulate Request Error"):
-        try:
-            # Intentionally cause an error
-            response = requests.get("https://nonexistent-domain-123456.com", timeout=2)
-        except Exception as e:
-            st.error(f"Expected error: {str(e)}")
-    
-    # Manually show some useful debug information
-    st.subheader("Manual Debug Information")
-    debug_info = f"""
-    Streamlit version: {st.__version__}
-    Current time: {datetime.now()}
-    """
-    st.code(debug_info)
 
 # ============================================================================
 # MAIN APPLICATION
@@ -682,45 +394,43 @@ def main():
     # Sidebar
     st.sidebar.header("Configuración")
     
-    # Input for Progol contest number
-    progol_number = st.sidebar.text_input("Número de concurso Progol:", value="2274")
-    
     # Debug mode toggle
     debug_toggle = st.sidebar.checkbox("Modo Debug", value=st.session_state.debug_enabled)
     if debug_toggle != st.session_state.debug_enabled:
         st.session_state.debug_enabled = debug_toggle
-        # Don't use experimental_rerun - it causes errors
     
-    # Advanced options
-    with st.sidebar.expander("Opciones Avanzadas"):
-        st.write("Si tienes problemas cargando los datos automáticamente, intenta con esta opción:")
-        if st.button("Cargar desde HTML"):
-            scrape_from_html_file()
-            
+    # Load data options
+    st.sidebar.subheader("Cargar Datos")
+    data_option = st.sidebar.radio(
+        "Método de obtención de datos:",
+        ["OCR desde Lotería Nacional", "Ingreso Manual"]
+    )
+    
     if st.sidebar.button("Cargar partidos"):
         with st.spinner("Obteniendo información de partidos..."):
             try:
-                # Get data from oddschecker
-                progol_matches, revancha_matches = get_matches_from_oddschecker(progol_number)
+                if data_option == "OCR desde Lotería Nacional":
+                    # Get data using OCR
+                    progol_matches, revancha_matches = get_matches_from_loterianacional()
+                else:
+                    # Get data manually
+                    # Just show UI for manual input, actual saving happens in the manual_match_input function
+                    progol_matches, revancha_matches = None, None
                 
                 # Process progol matches
                 if progol_matches:
                     st.session_state.progol_matches = pd.DataFrame(progol_matches)
                     st.success(f"Se cargaron {len(progol_matches)} partidos de Progol")
-                else:
-                    st.error("No se pudieron cargar los partidos de Progol")
                 
                 # Process revancha matches
                 if revancha_matches:
                     st.session_state.revancha_matches = pd.DataFrame(revancha_matches)
                     st.success(f"Se cargaron {len(revancha_matches)} partidos de Revancha")
-                else:
-                    st.warning("No se pudieron cargar los partidos de Revancha")
             
             except Exception as e:
                 # Show detailed error message
                 st.error(f"Error al cargar los datos: {str(e)}")
-                st.info("Intenta con otro número de concurso o verifica la conexión a internet.")
+                st.info("Intenta con el método de ingreso manual.")
 
     # User quiniela inputs
     st.sidebar.header("Mis Quinielas")
@@ -744,9 +454,9 @@ def main():
         st.session_state.revancha_selections = parse_quiniela_selections(revancha_selections_str)
         st.success("Selecciones guardadas")
     
-    # Main content tabs or debug mode
-    if st.session_state.debug_enabled:
-        debug_mode()
+    # Main content
+    if data_option == "Ingreso Manual" and not st.session_state.progol_matches:
+        manual_match_input()
     else:
         tab1, tab2, tab3 = st.tabs(["Progol", "Revancha", "Notificaciones"])
         
@@ -777,7 +487,7 @@ def main():
                 st.dataframe(display_df, use_container_width=True)
                 
                 # Download button
-                st.markdown(create_download_link(display_df, f"progol_{progol_number}.csv", "Descargar resultados como CSV"), unsafe_allow_html=True)
+                st.markdown(create_download_link(display_df, "progol.csv", "Descargar resultados como CSV"), unsafe_allow_html=True)
                 
                 # Show summary of correct predictions
                 if 'Acierto' in display_df.columns:
@@ -787,7 +497,7 @@ def main():
                     if total_finished > 0:
                         st.metric("Aciertos", f"{correct_count}/{total_finished}")
             else:
-                st.info("No hay partidos cargados. Ingresa un número de concurso y haz clic en 'Cargar partidos'.")
+                st.info("No hay partidos cargados. Carga los partidos o utiliza el modo de ingreso manual.")
         
         with tab2:
             st.header("Partidos Revancha")
@@ -816,7 +526,7 @@ def main():
                 st.dataframe(display_df, use_container_width=True)
                 
                 # Download button
-                st.markdown(create_download_link(display_df, f"revancha_{progol_number}.csv", "Descargar resultados como CSV"), unsafe_allow_html=True)
+                st.markdown(create_download_link(display_df, "revancha.csv", "Descargar resultados como CSV"), unsafe_allow_html=True)
                 
                 # Show summary of correct predictions
                 if 'Acierto' in display_df.columns:
@@ -826,7 +536,7 @@ def main():
                     if total_finished > 0:
                         st.metric("Aciertos", f"{correct_count}/{total_finished}")
             else:
-                st.info("No hay partidos cargados. Ingresa un número de concurso y haz clic en 'Cargar partidos'.")
+                st.info("No hay partidos de Revancha cargados.")
                 
         with tab3:
             st.header("Notificaciones de resultados")
