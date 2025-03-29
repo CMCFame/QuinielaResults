@@ -130,22 +130,77 @@ def debug_mode():
                 st.write(f"Status Code: {response.status_code}")
                 st.write(f"Headers: {response.headers}")
                 
-                # Try with selenium
-                st.write("Testing with Selenium:")
-                html = get_page_with_selenium("https://www.oddschecker.com")
-                if html:
-                    st.success("Selenium connection successful!")
-                    st.write(f"Page length: {len(html)} characters")
-                else:
-                    st.error("Selenium connection failed!")
+                # Try with requests and custom headers
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                }
+                st.write("Testing with custom headers:")
+                response2 = requests.get("https://www.oddschecker.com", headers=headers, timeout=10)
+                st.write(f"Status Code: {response2.status_code}")
+                
+                # Skip Selenium test as it may cause issues in deployment
+                st.info("Selenium test skipped to avoid potential issues in deployment environment")
             except Exception as e:
                 st.error(f"Error connecting: {str(e)}")
                 st.code(traceback.format_exc())
+                
+    # File uploader for direct HTML processing
+    st.subheader("Process HTML directly")
+    uploaded_file = st.file_uploader("Upload HTML from oddschecker.com", type=["html", "htm"])
     
-    # Log viewer
-    st.subheader("Recent Logs")
-    logs = logging.getLogger().handlers[0].stream.getvalue() if hasattr(logging.getLogger().handlers[0], 'stream') else "No logs available"
-    st.text_area("Log Output", logs, height=300)# ============================================================================
+    if uploaded_file is not None:
+        try:
+            html_content = uploaded_file.read().decode('utf-8')
+            st.write(f"File size: {len(html_content)} characters")
+            
+            # Find tables in HTML
+            soup = BeautifulSoup(html_content, 'html.parser')
+            tables = soup.find_all('table')
+            st.write(f"Found {len(tables)} tables in the HTML")
+            
+            # Display header of first table if available
+            if len(tables) > 0:
+                st.write("First table header:")
+                header_row = tables[0].find('tr')
+                if header_row:
+                    st.write(header_row.text)
+        except Exception as e:
+            st.error(f"Error processing HTML: {str(e)}")
+    
+    # Error simulation for testing
+    st.subheader("Error Handling Tests")
+    if st.button("Simulate Request Error"):
+        try:
+            # Intentionally cause an error
+            response = requests.get("https://nonexistent-domain-123456.com", timeout=2)
+        except Exception as e:
+            st.error(f"Expected error: {str(e)}")
+            logger.error(f"Test error: {str(e)}")
+    
+    # Log display
+    st.subheader("Recent Log Messages")
+    log_messages = []
+    for handler in logging.getLogger().handlers:
+        if isinstance(handler, logging.StreamHandler):
+            if hasattr(handler, 'stream') and hasattr(handler.stream, 'getvalue'):
+                log_messages.append(handler.stream.getvalue())
+    
+    if log_messages:
+        st.text_area("Log Output", "\n".join(log_messages), height=300)
+    else:
+        st.info("No log messages captured. Logs may be going to standard output instead of a StringIO stream.") 
+        
+    # Manually show some useful debug information
+    st.subheader("Manual Debug Information")
+    debug_info = f"""
+    Streamlit version: {st.__version__}
+    Python version: {sys.version}
+    Operating system: {sys.platform}
+    Current working directory: {os.getcwd()}
+    """
+    st.code(debug_info)# ============================================================================
 # STREAMLIT PAGE CONFIGURATION
 # ============================================================================
 import streamlit as st
@@ -424,7 +479,7 @@ def main():
     debug_toggle = st.sidebar.checkbox("Modo Debug", value=st.session_state.debug_enabled)
     if debug_toggle != st.session_state.debug_enabled:
         st.session_state.debug_enabled = debug_toggle
-        st.experimental_rerun()
+        # Don't use experimental_rerun - it causes errors
     
     # Advanced options
     with st.sidebar.expander("Opciones Avanzadas"):
