@@ -34,21 +34,25 @@ def get_matches_from_oddschecker(progol_number):
     url = f"https://www.oddschecker.com/es/pronosticos/futbol/predicciones-progol-revancha-quiniela-esta-semana-{progol_number}"
     
     try:
-        # Add headers to mimic a browser and avoid 403 errors
+        # Using Linux-based User-Agent which often works better for web scraping
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
             'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Cache-Control': 'max-age=0',
             'Referer': 'https://www.google.com/',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'cross-site',
+            'Sec-Fetch-User': '?1',
+            'Pragma': 'no-cache',
+            'Cache-Control': 'no-cache',
         }
         
-        # Try several different request configurations
+        # Create a session with cookies enabled
         session = requests.Session()
         
-        # First attempt with a delay and full headers
+        # First attempt with a delay
         time.sleep(2)  # Small delay to avoid rate limiting
         response = session.get(url, headers=headers, timeout=15)
         
@@ -405,14 +409,19 @@ def fetch_url_directly():
     if st.button("Obtener Datos de URL"):
         try:
             with st.spinner("Obteniendo datos..."):
+                # Using Linux-based User-Agent which often works better for web scraping
                 headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.5',
                     'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
-                    'Cache-Control': 'max-age=0',
                     'Referer': 'https://www.google.com/',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'cross-site',
+                    'Sec-Fetch-User': '?1',
+                    'Pragma': 'no-cache',
+                    'Cache-Control': 'no-cache',
                 }
                 
                 session = requests.Session()
@@ -532,20 +541,24 @@ def debug_mode():
     if st.button("Test Connection"):
         with st.spinner("Testing connection..."):
             try:
-                # Try simple request
-                response = requests.get("https://www.oddschecker.com", timeout=10)
-                st.write(f"Status Code: {response.status_code}")
-                st.write(f"Headers: {response.headers}")
-                
-                # Try with requests and custom headers
+                # Try with Linux-based User-Agent
                 headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.5',
+                    'Connection': 'keep-alive',
+                    'Referer': 'https://www.google.com/',
                 }
-                st.write("Testing with custom headers:")
-                response2 = requests.get("https://www.oddschecker.com", headers=headers, timeout=10)
-                st.write(f"Status Code: {response2.status_code}")
+                st.write("Testing with Linux User-Agent:")
+                response = requests.get("https://www.oddschecker.com", headers=headers, timeout=10)
+                st.write(f"Status Code: {response.status_code}")
+                
+                if response.status_code == 200:
+                    st.success("Connection successful!")
+                    st.write("Headers that worked:")
+                    st.json(headers)
+                else:
+                    st.error(f"Connection failed with status code: {response.status_code}")
             except Exception as e:
                 st.error(f"Error connecting: {str(e)}")
                 st.code(traceback.format_exc())
