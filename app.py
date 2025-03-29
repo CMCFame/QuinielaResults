@@ -23,6 +23,86 @@ from datetime import datetime
 import json
 import base64
 import traceback
+import random
+
+# ============================================================================
+# SCRAPING UTILITIES
+# ============================================================================
+def get_random_user_agent():
+    """
+    Return a random user agent from a list of modern browser user agents
+    """
+    user_agents = [
+        # Chrome on Windows
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
+        # Chrome on Mac
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
+        # Firefox on Windows
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/109.0',
+        # Firefox on Linux
+        'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0',
+        # Safari on Mac
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
+        # Edge on Windows
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36 Edg/109.0.1518.55'
+    ]
+    return random.choice(user_agents)
+
+def get_complete_headers():
+    """
+    Return complete browser-like headers with a random user agent
+    """
+    user_agent = get_random_user_agent()
+    
+    headers = {
+        'User-Agent': user_agent,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'en-US,en;q=0.9,es;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Referer': 'https://www.google.com/',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'cross-site',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+        'Pragma': 'no-cache',
+        'Cache-Control': 'no-cache',
+        'DNT': '1',  # Do Not Track
+    }
+    
+    return headers
+
+def fetch_with_retry(url, max_retries=3, delay=2):
+    """
+    Fetch a URL with retries and different headers
+    """
+    for attempt in range(max_retries):
+        try:
+            # Get fresh headers for each attempt
+            headers = get_complete_headers()
+            
+            # Create a session for cookies support
+            session = requests.Session()
+            
+            # Add a small delay between retries
+            if attempt > 0:
+                time.sleep(delay)
+            
+            # Make the request
+            response = session.get(url, headers=headers, timeout=15)
+            
+            # If successful, return the response
+            if response.status_code == 200:
+                return response
+            
+            st.info(f"Attempt {attempt+1} failed with status code {response.status_code}. Trying again with different headers...")
+        
+        except Exception as e:
+            st.warning(f"Error on attempt {attempt+1}: {str(e)}")
+    
+    # If all retries fail, return None
+    return None
 
 # ============================================================================
 # UTILITY FUNCTIONS
@@ -33,41 +113,15 @@ def get_matches_from_oddschecker(progol_number):
     """
     url = f"https://www.oddschecker.com/es/pronosticos/futbol/predicciones-progol-revancha-quiniela-esta-semana-{progol_number}"
     
-    try:
-        # Using Linux-based User-Agent which often works better for web scraping
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Connection': 'keep-alive',
-            'Referer': 'https://www.google.com/',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'cross-site',
-            'Sec-Fetch-User': '?1',
-            'Pragma': 'no-cache',
-            'Cache-Control': 'no-cache',
-        }
-        
-        # Create a session with cookies enabled
-        session = requests.Session()
-        
-        # First attempt with a delay
-        time.sleep(2)  # Small delay to avoid rate limiting
-        response = session.get(url, headers=headers, timeout=15)
-        
-        if response.status_code != 200:
-            st.error(f"Error al obtener datos de oddschecker: Código {response.status_code}")
-            return None, None
-            
-        html = response.text
-                
-    except Exception as e:
-        st.error(f"Error al obtener datos de oddschecker: {str(e)}")
+    # Attempt to fetch the page with retries
+    response = fetch_with_retry(url)
+    
+    if response is None:
+        st.error(f"Failed to fetch data from oddschecker after multiple attempts.")
         return None, None
     
     # Parse the HTML with BeautifulSoup
-    soup = BeautifulSoup(html, 'html.parser')
+    soup = BeautifulSoup(response.text, 'html.parser')
     
     # Find the tables for Progol and Revancha
     tables = soup.find_all('table')
@@ -409,105 +463,91 @@ def fetch_url_directly():
     if st.button("Obtener Datos de URL"):
         try:
             with st.spinner("Obteniendo datos..."):
-                # Using Linux-based User-Agent which often works better for web scraping
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.5',
-                    'Connection': 'keep-alive',
-                    'Referer': 'https://www.google.com/',
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'cross-site',
-                    'Sec-Fetch-User': '?1',
-                    'Pragma': 'no-cache',
-                    'Cache-Control': 'no-cache',
-                }
+                # Attempt to fetch with retries
+                response = fetch_with_retry(url)
                 
-                session = requests.Session()
-                response = session.get(url, headers=headers, timeout=15)
+                if response is None:
+                    st.error("No se pudo obtener datos después de varios intentos")
+                    return
                 
-                if response.status_code == 200:
-                    html_content = response.text
+                html_content = response.text
+                
+                # Parse the data from HTML
+                soup = BeautifulSoup(html_content, 'html.parser')
+                tables = soup.find_all('table')
+                
+                if len(tables) < 1:
+                    st.error("No se encontraron tablas en la página")
+                    return
+                
+                # Process matches from tables
+                progol_matches = []
+                revancha_matches = []
+                
+                # First table (Progol)
+                if len(tables) > 0:
+                    table = tables[0]
+                    rows = table.find_all('tr')
                     
-                    # Parse the data from HTML
-                    soup = BeautifulSoup(html_content, 'html.parser')
-                    tables = soup.find_all('table')
+                    if len(rows) > 1:  # We need at least a header and one data row
+                        # Process data rows (skip header)
+                        for row in rows[1:]:
+                            cols = row.find_all('td')
+                            if len(cols) >= 5:
+                                local = cols[0].text.strip()
+                                visitante = cols[1].text.strip()
+                                odds_l = cols[2].text.strip()
+                                odds_e = cols[3].text.strip()
+                                odds_v = cols[4].text.strip()
+                                
+                                progol_matches.append({
+                                    'local': local,
+                                    'visitante': visitante,
+                                    'odds_l': odds_l,
+                                    'odds_e': odds_e,
+                                    'odds_v': odds_v,
+                                    'resultado': '',
+                                    'status': 'Pendiente'
+                                })
+                
+                # Second table (Revancha)
+                if len(tables) > 1:
+                    table = tables[1]
+                    rows = table.find_all('tr')
                     
-                    if len(tables) < 1:
-                        st.error("No se encontraron tablas en la página")
-                        return
-                    
-                    # Process matches from tables
-                    progol_matches = []
-                    revancha_matches = []
-                    
-                    # First table (Progol)
-                    if len(tables) > 0:
-                        table = tables[0]
-                        rows = table.find_all('tr')
-                        
-                        if len(rows) > 1:  # We need at least a header and one data row
-                            # Process data rows (skip header)
-                            for row in rows[1:]:
-                                cols = row.find_all('td')
-                                if len(cols) >= 5:
-                                    local = cols[0].text.strip()
-                                    visitante = cols[1].text.strip()
-                                    odds_l = cols[2].text.strip()
-                                    odds_e = cols[3].text.strip()
-                                    odds_v = cols[4].text.strip()
-                                    
-                                    progol_matches.append({
-                                        'local': local,
-                                        'visitante': visitante,
-                                        'odds_l': odds_l,
-                                        'odds_e': odds_e,
-                                        'odds_v': odds_v,
-                                        'resultado': '',
-                                        'status': 'Pendiente'
-                                    })
-                    
-                    # Second table (Revancha)
-                    if len(tables) > 1:
-                        table = tables[1]
-                        rows = table.find_all('tr')
-                        
-                        if len(rows) > 1:  # We need at least a header and one data row
-                            # Process data rows (skip header)
-                            for row in rows[1:]:
-                                cols = row.find_all('td')
-                                if len(cols) >= 5:
-                                    local = cols[0].text.strip()
-                                    visitante = cols[1].text.strip()
-                                    odds_l = cols[2].text.strip()
-                                    odds_e = cols[3].text.strip()
-                                    odds_v = cols[4].text.strip()
-                                    
-                                    revancha_matches.append({
-                                        'local': local,
-                                        'visitante': visitante,
-                                        'odds_l': odds_l,
-                                        'odds_e': odds_e,
-                                        'odds_v': odds_v,
-                                        'resultado': '',
-                                        'status': 'Pendiente'
-                                    })
-                    
-                    # Save the matches to session state
-                    if progol_matches:
-                        st.session_state.progol_matches = pd.DataFrame(progol_matches)
-                        st.success(f"Se cargaron {len(progol_matches)} partidos de Progol")
-                    else:
-                        st.error("No se pudieron cargar los partidos de Progol")
-                    
-                    if revancha_matches:
-                        st.session_state.revancha_matches = pd.DataFrame(revancha_matches)
-                        st.success(f"Se cargaron {len(revancha_matches)} partidos de Revancha")
-                    else:
-                        st.warning("No se pudieron cargar los partidos de Revancha")
+                    if len(rows) > 1:  # We need at least a header and one data row
+                        # Process data rows (skip header)
+                        for row in rows[1:]:
+                            cols = row.find_all('td')
+                            if len(cols) >= 5:
+                                local = cols[0].text.strip()
+                                visitante = cols[1].text.strip()
+                                odds_l = cols[2].text.strip()
+                                odds_e = cols[3].text.strip()
+                                odds_v = cols[4].text.strip()
+                                
+                                revancha_matches.append({
+                                    'local': local,
+                                    'visitante': visitante,
+                                    'odds_l': odds_l,
+                                    'odds_e': odds_e,
+                                    'odds_v': odds_v,
+                                    'resultado': '',
+                                    'status': 'Pendiente'
+                                })
+                
+                # Save the matches to session state
+                if progol_matches:
+                    st.session_state.progol_matches = pd.DataFrame(progol_matches)
+                    st.success(f"Se cargaron {len(progol_matches)} partidos de Progol")
                 else:
-                    st.error(f"Error al obtener datos: Código {response.status_code}")
+                    st.error("No se pudieron cargar los partidos de Progol")
+                
+                if revancha_matches:
+                    st.session_state.revancha_matches = pd.DataFrame(revancha_matches)
+                    st.success(f"Se cargaron {len(revancha_matches)} partidos de Revancha")
+                else:
+                    st.warning("No se pudieron cargar los partidos de Revancha")
         except Exception as e:
             st.error(f"Error: {str(e)}")
             st.code(traceback.format_exc())
@@ -539,30 +579,34 @@ def debug_mode():
     # Test connection to oddschecker
     st.subheader("Test Connection to oddschecker.com")
     if st.button("Test Connection"):
-        with st.spinner("Testing connection..."):
-            try:
-                # Try with Linux-based User-Agent
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.5',
-                    'Connection': 'keep-alive',
-                    'Referer': 'https://www.google.com/',
-                }
-                st.write("Testing with Linux User-Agent:")
-                response = requests.get("https://www.oddschecker.com", headers=headers, timeout=10)
-                st.write(f"Status Code: {response.status_code}")
-                
-                if response.status_code == 200:
-                    st.success("Connection successful!")
-                    st.write("Headers that worked:")
-                    st.json(headers)
-                else:
-                    st.error(f"Connection failed with status code: {response.status_code}")
-            except Exception as e:
-                st.error(f"Error connecting: {str(e)}")
-                st.code(traceback.format_exc())
-                
+        with st.spinner("Testing connection with multiple user agents..."):
+            success = False
+            for i in range(3):  # Try 3 times
+                try:
+                    headers = get_complete_headers()
+                    st.write(f"Attempt {i+1} with User-Agent: {headers['User-Agent']}")
+                    
+                    session = requests.Session()
+                    response = session.get("https://www.oddschecker.com", headers=headers, timeout=10)
+                    
+                    st.write(f"Status Code: {response.status_code}")
+                    
+                    if response.status_code == 200:
+                        st.success(f"Connection successful on attempt {i+1}!")
+                        st.write("Headers that worked:")
+                        st.json(headers)
+                        success = True
+                        break
+                    else:
+                        st.warning(f"Attempt {i+1} failed with status code {response.status_code}")
+                        time.sleep(2)  # Wait before next attempt
+                except Exception as e:
+                    st.error(f"Error on attempt {i+1}: {str(e)}")
+                    st.code(traceback.format_exc())
+            
+            if not success:
+                st.error("All connection attempts failed")
+    
     # Add direct URL fetch method
     fetch_url_directly()
                 
@@ -801,14 +845,10 @@ def main():
                 st.info("No hay notificaciones de cambios de resultados todavía.")
 
     # Use a safer way to update UI with auto_refresh
-    # Instead of experimental_rerun, use a placeholder with a timer
     # This approach is safer and won't crash the app
     refresh_placeholder = st.empty()
     refresh_placeholder.info("La aplicación se actualiza automáticamente cada 30 segundos. Última actualización: " + 
                         datetime.now().strftime("%H:%M:%S"))
-    
-    # We don't need to call rerun explicitly, as Streamlit 
-    # will rerun the script whenever session state changes
 
 # Run the main application
 if __name__ == "__main__":
