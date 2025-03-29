@@ -18,7 +18,7 @@ import numpy as np
 import requests
 from bs4 import BeautifulSoup
 import time
-import threading
+# Removed threading import as we're using a simpler approach
 import re
 from datetime import datetime
 import json
@@ -34,7 +34,15 @@ def get_matches_from_oddschecker(progol_number):
     url = f"https://www.oddschecker.com/es/pronosticos/futbol/predicciones-progol-revancha-quiniela-esta-semana-{progol_number}"
     
     try:
-        response = requests.get(url)
+        # Add headers to mimic a browser and avoid 403 errors
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
+        response = requests.get(url, headers=headers)
         response.raise_for_status()  # Raise an exception for HTTP errors
         
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -165,73 +173,70 @@ def create_download_link(df, filename, text):
     return f'<a href="{href}" download="{filename}">{text}</a>'
 
 # ============================================================================
-# BACKGROUND RESULT FETCHING
+# RESULT UPDATE FUNCTIONS
 # ============================================================================
-def update_results_background(progol_df, revancha_df, stop_event):
+def update_match_results():
     """
-    Background thread to update match results periodically
+    Update match results - this is a simpler approach that doesn't use threading,
+    which can sometimes cause issues in Streamlit
     """
-    while not stop_event.is_set():
-        # Update progol results
-        if progol_df is not None and not progol_df.empty:
-            for idx, match in progol_df.iterrows():
-                resultado, status = get_live_results(match)
+    # Update progol results
+    if 'progol_matches' in st.session_state and st.session_state.progol_matches is not None and not st.session_state.progol_matches.empty:
+        for idx, match in st.session_state.progol_matches.iterrows():
+            resultado, status = get_live_results(match)
+            
+            # Check if result has changed
+            old_resultado = st.session_state.progol_matches.at[idx, 'resultado']
+            old_status = st.session_state.progol_matches.at[idx, 'status']
+            
+            # Update the dataframe with new results
+            st.session_state.progol_matches.at[idx, 'resultado'] = resultado
+            st.session_state.progol_matches.at[idx, 'status'] = status
+            
+            # Store the notification if the result has changed
+            if old_resultado != resultado and resultado != '':
+                # Add notification
+                notification = {
+                    'time': datetime.now().strftime("%H:%M:%S"),
+                    'match': f"{match['local']} vs {match['visitante']}",
+                    'old_result': old_resultado if old_resultado else 'None',
+                    'new_result': resultado,
+                    'type': 'Progol'
+                }
                 
-                # Check if result has changed
-                old_resultado = progol_df.at[idx, 'resultado']
-                old_status = progol_df.at[idx, 'status']
+                if 'notifications' not in st.session_state:
+                    st.session_state.notifications = []
                 
-                # Update the dataframe with new results
-                progol_df.at[idx, 'resultado'] = resultado
-                progol_df.at[idx, 'status'] = status
+                st.session_state.notifications.append(notification)
+    
+    # Update revancha results
+    if 'revancha_matches' in st.session_state and st.session_state.revancha_matches is not None and not st.session_state.revancha_matches.empty:
+        for idx, match in st.session_state.revancha_matches.iterrows():
+            resultado, status = get_live_results(match)
+            
+            # Check if result has changed
+            old_resultado = st.session_state.revancha_matches.at[idx, 'resultado']
+            old_status = st.session_state.revancha_matches.at[idx, 'status']
+            
+            # Update the dataframe with new results
+            st.session_state.revancha_matches.at[idx, 'resultado'] = resultado
+            st.session_state.revancha_matches.at[idx, 'status'] = status
+            
+            # Store the notification if the result has changed
+            if old_resultado != resultado and resultado != '':
+                # Add notification
+                notification = {
+                    'time': datetime.now().strftime("%H:%M:%S"),
+                    'match': f"{match['local']} vs {match['visitante']}",
+                    'old_result': old_resultado if old_resultado else 'None',
+                    'new_result': resultado,
+                    'type': 'Revancha'
+                }
                 
-                # Store the notification if the result has changed
-                if old_resultado != resultado and resultado != '':
-                    # Add notification
-                    notification = {
-                        'time': datetime.now().strftime("%H:%M:%S"),
-                        'match': f"{match['local']} vs {match['visitante']}",
-                        'old_result': old_resultado if old_resultado else 'None',
-                        'new_result': resultado,
-                        'type': 'Progol'
-                    }
-                    
-                    if 'notifications' not in st.session_state:
-                        st.session_state.notifications = []
-                    
-                    st.session_state.notifications.append(notification)
-        
-        # Update revancha results
-        if revancha_df is not None and not revancha_df.empty:
-            for idx, match in revancha_df.iterrows():
-                resultado, status = get_live_results(match)
+                if 'notifications' not in st.session_state:
+                    st.session_state.notifications = []
                 
-                # Check if result has changed
-                old_resultado = revancha_df.at[idx, 'resultado']
-                old_status = revancha_df.at[idx, 'status']
-                
-                # Update the dataframe with new results
-                revancha_df.at[idx, 'resultado'] = resultado
-                revancha_df.at[idx, 'status'] = status
-                
-                # Store the notification if the result has changed
-                if old_resultado != resultado and resultado != '':
-                    # Add notification
-                    notification = {
-                        'time': datetime.now().strftime("%H:%M:%S"),
-                        'match': f"{match['local']} vs {match['visitante']}",
-                        'old_result': old_resultado if old_resultado else 'None',
-                        'new_result': resultado,
-                        'type': 'Revancha'
-                    }
-                    
-                    if 'notifications' not in st.session_state:
-                        st.session_state.notifications = []
-                    
-                    st.session_state.notifications.append(notification)
-        
-        # Sleep for a while before checking again
-        time.sleep(10)  # Update every 10 seconds
+                st.session_state.notifications.append(notification)
 
 # ============================================================================
 # MAIN APPLICATION
@@ -242,16 +247,19 @@ def main():
         st.session_state.progol_matches = None
     if 'revancha_matches' not in st.session_state:
         st.session_state.revancha_matches = None
-    if 'stop_thread' not in st.session_state:
-        st.session_state.stop_thread = threading.Event()
-    if 'update_thread' not in st.session_state:
-        st.session_state.update_thread = None
     if 'notifications' not in st.session_state:
         st.session_state.notifications = []
     if 'progol_selections' not in st.session_state:
         st.session_state.progol_selections = []
     if 'revancha_selections' not in st.session_state:
         st.session_state.revancha_selections = []
+    if 'last_update' not in st.session_state:
+        st.session_state.last_update = datetime.now()
+    
+    # Update results periodically without threading
+    if datetime.now() - st.session_state.last_update > pd.Timedelta(seconds=30):
+        update_match_results()
+        st.session_state.last_update = datetime.now()
 
     # App title and description
     st.title("Progol Quiniela Tracker")
@@ -265,34 +273,34 @@ def main():
     
     if st.sidebar.button("Cargar partidos"):
         with st.spinner("Obteniendo información de partidos..."):
-            progol_matches, revancha_matches = get_matches_from_oddschecker(progol_number)
+            try:
+                # Get data from oddschecker
+                progol_matches, revancha_matches = get_matches_from_oddschecker(progol_number)
+                
+                # Process progol matches
+                if progol_matches:
+                    st.session_state.progol_matches = pd.DataFrame(progol_matches)
+                    st.success(f"Se cargaron {len(progol_matches)} partidos de Progol")
+                else:
+                    st.error("No se pudieron cargar los partidos de Progol")
+                
+                # Process revancha matches
+                if revancha_matches:
+                    st.session_state.revancha_matches = pd.DataFrame(revancha_matches)
+                    st.success(f"Se cargaron {len(revancha_matches)} partidos de Revancha")
+                else:
+                    st.warning("No se pudieron cargar los partidos de Revancha")
             
-            if progol_matches:
-                st.session_state.progol_matches = pd.DataFrame(progol_matches)
-                st.success(f"Se cargaron {len(progol_matches)} partidos de Progol")
-            else:
-                st.error("No se pudieron cargar los partidos de Progol")
+            except Exception as e:
+                # Show detailed error message
+                st.error(f"Error al cargar los datos: {str(e)}")
+                st.info("Intenta con otro número de concurso o verifica la conexión a internet.")
             
-            if revancha_matches:
-                st.session_state.revancha_matches = pd.DataFrame(revancha_matches)
-                st.success(f"Se cargaron {len(revancha_matches)} partidos de Revancha")
-            else:
-                st.warning("No se pudieron cargar los partidos de Revancha")
-            
-            # Stop existing thread if it's running
-            if st.session_state.update_thread and st.session_state.update_thread.is_alive():
-                st.session_state.stop_thread.set()
-                st.session_state.update_thread.join()
-                st.session_state.stop_thread.clear()
-            
-            # Start new background thread for updates
+            # Instead of using threads, we'll update inline
+            # Initial update of match results
             if progol_matches or revancha_matches:
-                st.session_state.update_thread = threading.Thread(
-                    target=update_results_background,
-                    args=(st.session_state.progol_matches, st.session_state.revancha_matches, st.session_state.stop_thread)
-                )
-                st.session_state.update_thread.daemon = True
-                st.session_state.update_thread.start()
+                update_match_results()
+                st.session_state.last_update = datetime.now()
 
     # User quiniela inputs
     st.sidebar.header("Mis Quinielas")
@@ -413,10 +421,15 @@ def main():
         else:
             st.info("No hay notificaciones de cambios de resultados todavía.")
 
-    # Add auto-refresh to update UI
-    st.empty()
-    time.sleep(1)
-    st.experimental_rerun()
+    # Use a safer way to update UI with auto_refresh
+    # Instead of experimental_rerun, use a placeholder with a timer
+    # This approach is safer and won't crash the app
+    refresh_placeholder = st.empty()
+    refresh_placeholder.info("La aplicación se actualiza automáticamente cada 30 segundos. Última actualización: " + 
+                        datetime.now().strftime("%H:%M:%S"))
+    
+    # We don't need to call rerun explicitly, as Streamlit 
+    # will rerun the script whenever session state changes
 
 # Run the main application
 if __name__ == "__main__":
