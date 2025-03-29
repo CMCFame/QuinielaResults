@@ -26,12 +26,9 @@ import traceback
 import random
 from PIL import Image
 from io import BytesIO
-import pytesseract
-import cv2
-import numpy as np
 
 # ============================================================================
-# OCR UTILITIES
+# IMAGE AND DATA UTILITIES
 # ============================================================================
 def download_image(url):
     """
@@ -46,72 +43,9 @@ def download_image(url):
         st.error(f"Error downloading image: {str(e)}")
         return None
 
-def preprocess_image(image):
+def get_quiniela_image():
     """
-    Preprocess the image for better OCR results
-    """
-    # Convert PIL image to OpenCV format
-    img = np.array(image)
-    
-    # Convert to grayscale
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    
-    # Apply threshold to get binary image
-    _, binary = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
-    
-    # Return as PIL image
-    return Image.fromarray(binary)
-
-def extract_text_from_image(image):
-    """
-    Extract text from image using OCR
-    """
-    try:
-        # Preprocess the image
-        processed_image = preprocess_image(image)
-        
-        # Use pytesseract to extract text
-        text = pytesseract.image_to_string(processed_image, lang='spa')
-        
-        return text
-    except Exception as e:
-        st.error(f"Error extracting text: {str(e)}")
-        return None
-
-def parse_matches_from_ocr_text(text):
-    """
-    Parse match information from OCR text
-    """
-    if not text:
-        return None
-    
-    # Regular expression to find match patterns
-    # Looking for patterns like "Team1 vs Team2" or "Team1 - Team2"
-    match_pattern = r'([A-Za-z0-9\s\.]+)(?:\s+vs\.?\s+|\s+-\s+)([A-Za-z0-9\s\.]+)'
-    
-    matches = re.findall(match_pattern, text)
-    
-    if not matches:
-        return None
-    
-    # Create match data
-    match_data = []
-    for local, visitante in matches:
-        match_data.append({
-            'local': local.strip(),
-            'visitante': visitante.strip(),
-            'odds_l': "2.0",  # Default odds
-            'odds_e': "3.0",  # Default odds
-            'odds_v': "2.0",  # Default odds
-            'resultado': '',
-            'status': 'Pendiente'
-        })
-    
-    return match_data
-
-def get_matches_from_loterianacional():
-    """
-    Get match data from Lotería Nacional website using OCR
+    Get the quiniela image from Lotería Nacional
     """
     # URL of the image
     url = "https://www.loterianacional.gob.mx/Progol/Quiniela"
@@ -121,42 +55,13 @@ def get_matches_from_loterianacional():
     image = download_image(url)
     
     if image is None:
-        return None, None
+        st.error("No se pudo descargar la imagen. Intenta con el método de ingreso manual.")
+        return None
     
     # Display the image
-    st.image(image, caption="Imagen descargada de Lotería Nacional", use_column_width=True)
+    st.image(image, caption="Imagen de la quiniela actual", use_column_width=True)
     
-    # Extract text from image
-    st.info("Procesando imagen con OCR...")
-    text = extract_text_from_image(image)
-    
-    if text is None:
-        return None, None
-    
-    # Show extracted text for debugging
-    with st.expander("Texto extraído de la imagen"):
-        st.text(text)
-    
-    # Parse matches from text
-    st.info("Analizando datos extraídos...")
-    matches = parse_matches_from_ocr_text(text)
-    
-    if matches is None or len(matches) == 0:
-        st.error("No se pudieron identificar partidos en la imagen")
-        return None, None
-    
-    # Separate into Progol and Revancha
-    # Assuming first 14 matches are Progol and the rest are Revancha
-    if len(matches) >= 14:
-        progol_matches = matches[:14]
-        revancha_matches = matches[14:] if len(matches) > 14 else []
-    else:
-        progol_matches = matches
-        revancha_matches = []
-    
-    st.success(f"Se encontraron {len(progol_matches)} partidos de Progol y {len(revancha_matches)} partidos de Revancha")
-    
-    return progol_matches, revancha_matches
+    return image
 
 def get_live_results(match):
     """
@@ -298,7 +203,16 @@ def manual_match_input():
     Allow manual input of match data
     """
     st.subheader("Ingreso Manual de Partidos")
-    st.write("Ingresa manualmente los partidos si la extracción automática no funciona correctamente.")
+    st.write("""
+    Ingresa manualmente los partidos siguiendo estos pasos:
+    1. Carga la imagen de la quiniela para referencia (opcional)
+    2. Ingresa los equipos locales y visitantes
+    3. Guarda los partidos
+    """)
+    
+    # Option to load the image for reference
+    if st.button("Mostrar imagen de la quiniela actual"):
+        image = get_quiniela_image()
     
     # Number of matches to input
     num_progol = st.number_input("Número de partidos Progol:", min_value=1, max_value=14, value=14)
@@ -310,45 +224,69 @@ def manual_match_input():
     
     if num_progol > 0:
         st.write("### Partidos Progol")
-        for i in range(num_progol):
-            col1, col2 = st.columns(2)
-            with col1:
-                local = st.text_input(f"Equipo Local #{i+1}:", key=f"progol_local_{i}")
-            with col2:
-                visitante = st.text_input(f"Equipo Visitante #{i+1}:", key=f"progol_visit_{i}")
+        
+        # Create a form for easier input
+        with st.form("progol_form"):
+            for i in range(num_progol):
+                cols = st.columns([3, 1, 3])
+                with cols[0]:
+                    local = st.text_input(f"Local #{i+1}:", key=f"progol_local_{i}")
+                with cols[1]:
+                    st.write("vs")
+                with cols[2]:
+                    visitante = st.text_input(f"Visitante #{i+1}:", key=f"progol_visit_{i}")
+                
+                if local and visitante:
+                    progol_matches.append({
+                        'local': local,
+                        'visitante': visitante,
+                        'odds_l': "2.0",  # Default odds
+                        'odds_e': "3.0",  # Default odds
+                        'odds_v': "2.0",  # Default odds
+                        'resultado': '',
+                        'status': 'Pendiente'
+                    })
             
-            if local and visitante:
-                progol_matches.append({
-                    'local': local,
-                    'visitante': visitante,
-                    'odds_l': "2.0",  # Default odds
-                    'odds_e': "3.0",  # Default odds
-                    'odds_v': "2.0",  # Default odds
-                    'resultado': '',
-                    'status': 'Pendiente'
-                })
+            submitted_progol = st.form_submit_button("Guardar Partidos Progol")
     
     if num_revancha > 0:
         st.write("### Partidos Revancha")
-        for i in range(num_revancha):
-            col1, col2 = st.columns(2)
-            with col1:
-                local = st.text_input(f"Equipo Local #{i+1}:", key=f"revancha_local_{i}")
-            with col2:
-                visitante = st.text_input(f"Equipo Visitante #{i+1}:", key=f"revancha_visit_{i}")
+        
+        # Create a form for easier input
+        with st.form("revancha_form"):
+            for i in range(num_revancha):
+                cols = st.columns([3, 1, 3])
+                with cols[0]:
+                    local = st.text_input(f"Local #{i+1}:", key=f"revancha_local_{i}")
+                with cols[1]:
+                    st.write("vs")
+                with cols[2]:
+                    visitante = st.text_input(f"Visitante #{i+1}:", key=f"revancha_visit_{i}")
+                
+                if local and visitante:
+                    revancha_matches.append({
+                        'local': local,
+                        'visitante': visitante,
+                        'odds_l': "2.0",  # Default odds
+                        'odds_e': "3.0",  # Default odds
+                        'odds_v': "2.0",  # Default odds
+                        'resultado': '',
+                        'status': 'Pendiente'
+                    })
             
-            if local and visitante:
-                revancha_matches.append({
-                    'local': local,
-                    'visitante': visitante,
-                    'odds_l': "2.0",  # Default odds
-                    'odds_e': "3.0",  # Default odds
-                    'odds_v': "2.0",  # Default odds
-                    'resultado': '',
-                    'status': 'Pendiente'
-                })
+            submitted_revancha = st.form_submit_button("Guardar Partidos Revancha")
     
-    if st.button("Guardar Partidos Manuales"):
+    # Apply the matches to session state when the form is submitted
+    if 'submitted_progol' in locals() and submitted_progol and progol_matches:
+        st.session_state.progol_matches = pd.DataFrame(progol_matches)
+        st.success(f"Se guardaron {len(progol_matches)} partidos de Progol")
+    
+    if 'submitted_revancha' in locals() and submitted_revancha and revancha_matches:
+        st.session_state.revancha_matches = pd.DataFrame(revancha_matches)
+        st.success(f"Se guardaron {len(revancha_matches)} partidos de Revancha")
+    
+    # Global save button for all matches
+    if st.button("Guardar Todos los Partidos"):
         if progol_matches:
             st.session_state.progol_matches = pd.DataFrame(progol_matches)
             st.success(f"Se guardaron {len(progol_matches)} partidos de Progol")
@@ -356,11 +294,57 @@ def manual_match_input():
         if revancha_matches:
             st.session_state.revancha_matches = pd.DataFrame(revancha_matches)
             st.success(f"Se guardaron {len(revancha_matches)} partidos de Revancha")
-            
-        # Return the matches for use
-        return progol_matches, revancha_matches
+
+# ============================================================================
+# PREMADE MATCH TEMPLATES
+# ============================================================================
+def load_sample_matches():
+    """
+    Load sample match data for demonstration purposes
+    """
+    st.subheader("Cargar Equipos de la Quiniela Actual")
+    st.write("Selecciona qué quiniela quieres cargar:")
     
-    return None, None
+    template_option = st.radio(
+        "Plantilla:",
+        ["Progol 2274", "Revancha 2274"]
+    )
+    
+    if st.button("Cargar Plantilla"):
+        if template_option == "Progol 2274":
+            progol_matches = [
+                {"local": "Juarez", "visitante": "Guadalajara", "odds_l": "3.40", "odds_e": "3.50", "odds_v": "2.15", "resultado": "", "status": "Pendiente"},
+                {"local": "Pumas UNAM", "visitante": "Monterrey", "odds_l": "2.80", "odds_e": "3.50", "odds_v": "2.50", "resultado": "", "status": "Pendiente"},
+                {"local": "Tlaxcala FC", "visitante": "Cancun", "odds_l": "2.70", "odds_e": "3.30", "odds_v": "2.50", "resultado": "", "status": "Pendiente"},
+                {"local": "Sevilla", "visitante": "Athletic Club", "odds_l": "3.00", "odds_e": "3.20", "odds_v": "2.60", "resultado": "", "status": "Pendiente"},
+                {"local": "Rayo Vallecano", "visitante": "Real Sociedad", "odds_l": "2.50", "odds_e": "3.15", "odds_v": "3.15", "resultado": "", "status": "Pendiente"},
+                {"local": "Atletico Madrid", "visitante": "Barcelona", "odds_l": "3.10", "odds_e": "4.00", "odds_v": "2.72", "resultado": "", "status": "Pendiente"},
+                {"local": "Everton", "visitante": "West Ham", "odds_l": "2.15", "odds_e": "3.30", "odds_v": "3.90", "resultado": "", "status": "Pendiente"},
+                {"local": "Bologna", "visitante": "Lazio", "odds_l": "2.40", "odds_e": "3.14", "odds_v": "3.25", "resultado": "", "status": "Pendiente"},
+                {"local": "Augsburgo", "visitante": "Wolfsburgo", "odds_l": "2.60", "odds_e": "3.30", "odds_v": "2.80", "resultado": "", "status": "Pendiente"},
+                {"local": "Twente", "visitante": "Feyenoord", "odds_l": "2.30", "odds_e": "3.60", "odds_v": "3.00", "resultado": "", "status": "Pendiente"},
+                {"local": "Arouca", "visitante": "Estoril Praia", "odds_l": "2.00", "odds_e": "3.40", "odds_v": "3.90", "resultado": "", "status": "Pendiente"},
+                {"local": "Atlanta United", "visitante": "Inter Miami", "odds_l": "2.40", "odds_e": "3.78", "odds_v": "2.75", "resultado": "", "status": "Pendiente"},
+                {"local": "U. Catolica", "visitante": "Colo Colo", "odds_l": "3.80", "odds_e": "3.26", "odds_v": "1.89", "resultado": "", "status": "Pendiente"},
+                {"local": "Spartak Moscow", "visitante": "Zenit St. Petersburg", "odds_l": "2.40", "odds_e": "3.28", "odds_v": "2.90", "resultado": "", "status": "Pendiente"}
+            ]
+            
+            st.session_state.progol_matches = pd.DataFrame(progol_matches)
+            st.success("Se cargaron los partidos de Progol 2274")
+            
+        elif template_option == "Revancha 2274":
+            revancha_matches = [
+                {"local": "Puebla", "visitante": "Toluca", "odds_l": "4.75", "odds_e": "4.20", "odds_v": "1.67", "resultado": "", "status": "Pendiente"},
+                {"local": "Cruz Azul", "visitante": "Atletico San Luis", "odds_l": "1.30", "odds_e": "5.50", "odds_v": "10.0", "resultado": "", "status": "Pendiente"},
+                {"local": "Atlas", "visitante": "America", "odds_l": "4.20", "odds_e": "3.75", "odds_v": "1.88", "resultado": "", "status": "Pendiente"},
+                {"local": "Pachuca", "visitante": "Tijuana", "odds_l": "1.57", "odds_e": "4.40", "odds_v": "5.50", "resultado": "", "status": "Pendiente"},
+                {"local": "Fiorentina", "visitante": "Juventus", "odds_l": "3.50", "odds_e": "3.20", "odds_v": "2.30", "resultado": "", "status": "Pendiente"},
+                {"local": "Werder Bremen", "visitante": "Borussia M'Gladbach", "odds_l": "2.40", "odds_e": "3.70", "odds_v": "2.88", "resultado": "", "status": "Pendiente"},
+                {"local": "RB Leipzig", "visitante": "Borussia Dortmund", "odds_l": "2.40", "odds_e": "3.70", "odds_v": "2.90", "resultado": "", "status": "Pendiente"}
+            ]
+            
+            st.session_state.revancha_matches = pd.DataFrame(revancha_matches)
+            st.success("Se cargaron los partidos de Revancha 2274")
 
 # ============================================================================
 # MAIN APPLICATION
@@ -379,10 +363,8 @@ def main():
         st.session_state.revancha_selections = []
     if 'last_update' not in st.session_state:
         st.session_state.last_update = datetime.now()
-    if 'debug_enabled' not in st.session_state:
-        st.session_state.debug_enabled = False
     
-    # Update results periodically without threading
+    # Update results periodically
     if datetime.now() - st.session_state.last_update > pd.Timedelta(seconds=30):
         update_match_results()
         st.session_state.last_update = datetime.now()
@@ -394,44 +376,13 @@ def main():
     # Sidebar
     st.sidebar.header("Configuración")
     
-    # Debug mode toggle
-    debug_toggle = st.sidebar.checkbox("Modo Debug", value=st.session_state.debug_enabled)
-    if debug_toggle != st.session_state.debug_enabled:
-        st.session_state.debug_enabled = debug_toggle
-    
     # Load data options
     st.sidebar.subheader("Cargar Datos")
     data_option = st.sidebar.radio(
         "Método de obtención de datos:",
-        ["OCR desde Lotería Nacional", "Ingreso Manual"]
+        ["Cargar Plantilla", "Ingreso Manual", "Ver Imagen Quiniela"]
     )
     
-    if st.sidebar.button("Cargar partidos"):
-        with st.spinner("Obteniendo información de partidos..."):
-            try:
-                if data_option == "OCR desde Lotería Nacional":
-                    # Get data using OCR
-                    progol_matches, revancha_matches = get_matches_from_loterianacional()
-                else:
-                    # Get data manually
-                    # Just show UI for manual input, actual saving happens in the manual_match_input function
-                    progol_matches, revancha_matches = None, None
-                
-                # Process progol matches
-                if progol_matches:
-                    st.session_state.progol_matches = pd.DataFrame(progol_matches)
-                    st.success(f"Se cargaron {len(progol_matches)} partidos de Progol")
-                
-                # Process revancha matches
-                if revancha_matches:
-                    st.session_state.revancha_matches = pd.DataFrame(revancha_matches)
-                    st.success(f"Se cargaron {len(revancha_matches)} partidos de Revancha")
-            
-            except Exception as e:
-                # Show detailed error message
-                st.error(f"Error al cargar los datos: {str(e)}")
-                st.info("Intenta con el método de ingreso manual.")
-
     # User quiniela inputs
     st.sidebar.header("Mis Quinielas")
     
@@ -455,9 +406,21 @@ def main():
         st.success("Selecciones guardadas")
     
     # Main content
-    if data_option == "Ingreso Manual" and not st.session_state.progol_matches:
+    if data_option == "Ingreso Manual":
         manual_match_input()
+    elif data_option == "Cargar Plantilla":
+        load_sample_matches()
+    elif data_option == "Ver Imagen Quiniela":
+        st.subheader("Imagen de la Quiniela Actual")
+        image = get_quiniela_image()
+        st.write("""
+        Para ingresar los partidos de la quiniela:
+        1. Observa los equipos en la imagen
+        2. Selecciona "Ingreso Manual" en el menú lateral
+        3. Ingresa los equipos manualmente
+        """)
     else:
+        # Show the main tabs if data input is not active
         tab1, tab2, tab3 = st.tabs(["Progol", "Revancha", "Notificaciones"])
         
         with tab1:
