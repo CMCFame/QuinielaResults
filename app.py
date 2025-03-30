@@ -16,61 +16,226 @@ st.set_page_config(
 import pandas as pd
 import numpy as np
 import requests
-from bs4 import BeautifulSoup
 import time
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import base64
 import traceback
 import random
-from PIL import Image
-from io import BytesIO
 
 # ============================================================================
-# IMAGE AND DATA UTILITIES
+# API FOOTBALL INTEGRATION
 # ============================================================================
-def download_image(url):
+def get_api_key():
     """
-    Download an image from a URL
+    Get API key from Streamlit secrets
     """
     try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        img = Image.open(BytesIO(response.content))
-        return img
+        return st.secrets["api_football"]["api_key"]
     except Exception as e:
-        st.error(f"Error downloading image: {str(e)}")
+        st.error("API key not found in secrets. Please set up your .streamlit/secrets.toml file.")
+        st.code("""
+        [api_football]
+        api_key = "YOUR_API_KEY"
+        """)
         return None
 
-def get_quiniela_image():
+def get_live_matches():
     """
-    Get the quiniela image from Lotería Nacional
+    Get live matches from API-Football
     """
-    # URL of the image
-    url = "https://www.loterianacional.gob.mx/Progol/Quiniela"
+    api_key = get_api_key()
     
-    # Download the image
-    st.info("Descargando imagen desde Lotería Nacional...")
-    image = download_image(url)
-    
-    if image is None:
-        st.error("No se pudo descargar la imagen. Intenta con el método de ingreso manual.")
+    if not api_key:
         return None
     
-    # Display the image
-    st.image(image, caption="Imagen de la quiniela actual", use_column_width=True)
+    url = "https://v3.football.api-sports.io/fixtures?live=all"
+    headers = {
+        'x-apisports-key': api_key
+    }
     
-    return image
+    try:
+        response = requests.get(url, headers=headers)
+        data = response.json()
+        
+        if 'response' in data:
+            return data['response']
+        else:
+            st.warning("No response data from API")
+            return None
+            
+    except Exception as e:
+        st.error(f"Error fetching live matches: {str(e)}")
+        return None
+
+def get_matches_by_date(date_str):
+    """
+    Get matches for a specific date from API-Football
+    Date format should be YYYY-MM-DD
+    """
+    api_key = get_api_key()
+    
+    if not api_key:
+        return None
+    
+    url = f"https://v3.football.api-sports.io/fixtures?date={date_str}"
+    headers = {
+        'x-apisports-key': api_key
+    }
+    
+    try:
+        response = requests.get(url, headers=headers)
+        data = response.json()
+        
+        if 'response' in data:
+            return data['response']
+        else:
+            st.warning("No response data from API")
+            return None
+            
+    except Exception as e:
+        st.error(f"Error fetching matches for date {date_str}: {str(e)}")
+        return None
+
+def get_matches_by_league(league_id, season):
+    """
+    Get matches for a specific league and season from API-Football
+    """
+    api_key = get_api_key()
+    
+    if not api_key:
+        return None
+    
+    url = f"https://v3.football.api-sports.io/fixtures?league={league_id}&season={season}"
+    headers = {
+        'x-apisports-key': api_key
+    }
+    
+    try:
+        response = requests.get(url, headers=headers)
+        data = response.json()
+        
+        if 'response' in data:
+            return data['response']
+        else:
+            st.warning("No response data from API")
+            return None
+            
+    except Exception as e:
+        st.error(f"Error fetching matches for league {league_id}, season {season}: {str(e)}")
+        return None
+
+def process_api_matches(api_matches, max_matches=14):
+    """
+    Process API-Football matches into our app format
+    """
+    if not api_matches:
+        return None
+    
+    processed_matches = []
+    
+    for match in api_matches[:max_matches]:  # Limit to max_matches
+        try:
+            fixture = match['fixture']
+            teams = match['teams']
+            goals = match['goals']
+            
+            # Extract data
+            local_team = teams['home']['name']
+            visitante_team = teams['away']['name']
+            
+            # Get match status
+            status_code = fixture['status']['short']  # NS, 1H, HT, 2H, FT, etc.
+            
+            # Map API status to our app status
+            status_map = {
+                'NS': 'Pendiente',  # Not Started
+                'TBD': 'Pendiente',  # To Be Defined
+                '1H': 'En Juego',   # First Half
+                'HT': 'En Juego',   # Half Time
+                '2H': 'En Juego',   # Second Half
+                'ET': 'En Juego',   # Extra Time
+                'P': 'En Juego',    # Penalty
+                'FT': 'Finalizado', # Full Time
+                'AET': 'Finalizado',# After Extra Time
+                'PEN': 'Finalizado',# Penalty Shootout
+                'BT': 'En Juego',   # Break Time
+                'SUSP': 'Suspendido',# Suspended
+                'INT': 'Interrumpido',# Interrupted
+                'PST': 'Pospuesto', # Postponed
+                'CANC': 'Cancelado',# Cancelled
+                'ABD': 'Abandonado',# Abandoned
+                'AWD': 'Declarado', # Technical Loss
+                'WO': 'Incomparecencia',# Walkover
+            }
+            
+            status = status_map.get(status_code, 'Pendiente')
+            
+            # Determine result for finished or in-progress matches
+            resultado = ''
+            if goals and (status == 'Finalizado' or status == 'En Juego'):
+                home_goals = goals['home'] if goals['home'] is not None else 0
+                away_goals = goals['away'] if goals['away'] is not None else 0
+                
+                if home_goals > away_goals:
+                    resultado = 'L'  # Local win
+                elif away_goals > home_goals:
+                    resultado = 'V'  # Visitor win
+                else:
+                    resultado = 'E'  # Draw
+            
+            # Create match entry
+            match_entry = {
+                'local': local_team,
+                'visitante': visitante_team,
+                'odds_l': "2.0",  # Default odds
+                'odds_e': "3.0",  # Default odds
+                'odds_v': "2.0",  # Default odds
+                'resultado': resultado,
+                'status': status
+            }
+            
+            processed_matches.append(match_entry)
+            
+        except Exception as e:
+            st.warning(f"Error processing match: {str(e)}")
+            continue
+    
+    return processed_matches
+
+def fetch_matches_for_progol():
+    """
+    Fetch matches for Progol from API-Football
+    This will get upcoming matches from major leagues
+    """
+    # Get today's date and tomorrow's date
+    today = datetime.today().strftime('%Y-%m-%d')
+    tomorrow = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
+    
+    # Get matches for today and tomorrow
+    today_matches = get_matches_by_date(today)
+    tomorrow_matches = get_matches_by_date(tomorrow)
+    
+    # Combine matches
+    all_matches = []
+    if today_matches:
+        all_matches.extend(today_matches)
+    if tomorrow_matches:
+        all_matches.extend(tomorrow_matches)
+    
+    # Process matches
+    processed_matches = process_api_matches(all_matches)
+    
+    return processed_matches
 
 def get_live_results(match):
     """
-    Get live results for a specific match
-    In a production app, this would connect to an API like flashscore.com or sofascore
-    For this demo, we'll simulate random results
+    Check for live results for a match
+    If using API-Football, this would be replaced with actual API calls
     """
-    # This is a placeholder - in a real app you would connect to a sports API
-    # or scrape live results from a website
+    # If we have a full integration with API-Football, this would check for updates
+    # For now, using the simulated approach for demonstration
     
     # Simulate a random result for demonstration purposes
     import random
@@ -92,6 +257,9 @@ def get_live_results(match):
         
     return resultado, status
 
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
 def parse_quiniela_selections(selections_str):
     """
     Parse user's quiniela selections from a string like "L,E,V,L,E,V,..."
@@ -203,16 +371,7 @@ def manual_match_input():
     Allow manual input of match data
     """
     st.subheader("Ingreso Manual de Partidos")
-    st.write("""
-    Ingresa manualmente los partidos siguiendo estos pasos:
-    1. Carga la imagen de la quiniela para referencia (opcional)
-    2. Ingresa los equipos locales y visitantes
-    3. Guarda los partidos
-    """)
-    
-    # Option to load the image for reference
-    if st.button("Mostrar imagen de la quiniela actual"):
-        image = get_quiniela_image()
+    st.write("Ingresa manualmente los partidos para tu quiniela.")
     
     # Number of matches to input
     num_progol = st.number_input("Número de partidos Progol:", min_value=1, max_value=14, value=14)
@@ -363,15 +522,25 @@ def main():
         st.session_state.revancha_selections = []
     if 'last_update' not in st.session_state:
         st.session_state.last_update = datetime.now()
+    if 'api_key_checked' not in st.session_state:
+        st.session_state.api_key_checked = False
     
     # Update results periodically
-    if datetime.now() - st.session_state.last_update > pd.Timedelta(seconds=30):
+    if datetime.now() - st.session_state.last_update > timedelta(seconds=30):
         update_match_results()
         st.session_state.last_update = datetime.now()
 
     # App title and description
     st.title("Progol Quiniela Tracker")
     st.write("Esta aplicación te permite seguir los resultados de tus quinielas Progol y Revancha en tiempo real.")
+    
+    # Check API key on first run
+    if not st.session_state.api_key_checked:
+        api_key = get_api_key()
+        if api_key:
+            st.success("API key found in secrets!")
+        # Mark as checked to avoid checking every rerun
+        st.session_state.api_key_checked = True
     
     # Sidebar
     st.sidebar.header("Configuración")
@@ -380,7 +549,7 @@ def main():
     st.sidebar.subheader("Cargar Datos")
     data_option = st.sidebar.radio(
         "Método de obtención de datos:",
-        ["Cargar Plantilla", "Ingreso Manual", "Ver Imagen Quiniela"]
+        ["API-Football", "Cargar Plantilla", "Ingreso Manual"]
     )
     
     # User quiniela inputs
@@ -405,22 +574,56 @@ def main():
         st.session_state.revancha_selections = parse_quiniela_selections(revancha_selections_str)
         st.success("Selecciones guardadas")
     
-    # Main content
-    if data_option == "Ingreso Manual":
+    # Main content based on selected option
+    if data_option == "API-Football":
+        st.subheader("Partidos desde API-Football")
+        
+        if st.button("Cargar Partidos"):
+            with st.spinner("Obteniendo partidos desde API-Football..."):
+                # Get matches from API
+                matches = fetch_matches_for_progol()
+                
+                if matches:
+                    # Save as Progol matches
+                    st.session_state.progol_matches = pd.DataFrame(matches)
+                    st.success(f"Se cargaron {len(matches)} partidos desde API-Football")
+                else:
+                    st.error("No se pudieron cargar partidos desde API-Football")
+        
+        # Display API status
+        st.subheader("Estado de la API")
+        api_key = get_api_key()
+        if api_key:
+            st.success("API configurada correctamente")
+            
+            # Show a sample of live matches if available
+            if st.button("Mostrar partidos en vivo"):
+                with st.spinner("Consultando partidos en vivo..."):
+                    live_matches = get_live_matches()
+                    if live_matches:
+                        st.success(f"Hay {len(live_matches)} partidos en vivo")
+                        # Display first few matches
+                        for i, match in enumerate(live_matches[:5]):
+                            teams = match['teams']
+                            goals = match['goals']
+                            st.write(f"{teams['home']['name']} {goals['home'] or 0} - {goals['away'] or 0} {teams['away']['name']} ({match['fixture']['status']['long']})")
+                        
+                        if len(live_matches) > 5:
+                            st.info(f"... y {len(live_matches) - 5} partidos más")
+                    else:
+                        st.info("No hay partidos en vivo en este momento")
+        else:
+            st.error("API no configurada. Por favor configura tu API key en los secretos de Streamlit.")
+            
+    elif data_option == "Ingreso Manual":
         manual_match_input()
     elif data_option == "Cargar Plantilla":
         load_sample_matches()
-    elif data_option == "Ver Imagen Quiniela":
-        st.subheader("Imagen de la Quiniela Actual")
-        image = get_quiniela_image()
-        st.write("""
-        Para ingresar los partidos de la quiniela:
-        1. Observa los equipos en la imagen
-        2. Selecciona "Ingreso Manual" en el menú lateral
-        3. Ingresa los equipos manualmente
-        """)
-    else:
-        # Show the main tabs if data input is not active
+    
+    # Show match data if available
+    if 'progol_matches' in st.session_state and st.session_state.progol_matches is not None or \
+       'revancha_matches' in st.session_state and st.session_state.revancha_matches is not None:
+        
         tab1, tab2, tab3 = st.tabs(["Progol", "Revancha", "Notificaciones"])
         
         with tab1:
@@ -460,7 +663,7 @@ def main():
                     if total_finished > 0:
                         st.metric("Aciertos", f"{correct_count}/{total_finished}")
             else:
-                st.info("No hay partidos cargados. Carga los partidos o utiliza el modo de ingreso manual.")
+                st.info("No hay partidos cargados. Usa la opción de cargar partidos desde API-Football o ingreso manual.")
         
         with tab2:
             st.header("Partidos Revancha")
