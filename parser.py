@@ -1,23 +1,32 @@
 # ===========================================================
-# parser.py
+# parser.py  (updated to ignore header lines)
 # ===========================================================
 from __future__ import annotations
 import re, pandas as pd
 
-_PATTERN_ROW = re.compile(r"^(.*?)(L|E|V)(?:\s+|\t)(.*)$", re.I)
+_HEADER_RE = re.compile(r"^\s*Partido\b", re.I)
+_SPLIT_RE  = re.compile(r"\s+")
 
 def parse_heat_map(text: str) -> pd.DataFrame:
-    """Parse pasted 20‑column heat‑map into DataFrame (index = match#)."""
-    rows = []
-    for line in text.strip().splitlines():
-        parts = re.split(r"\s+", line.strip())
-        # Expect: description then 20 codes
+    """Convert pasted 20-column heat-map into a DataFrame.
+
+    •   Ignora líneas vacías o que no contengan " vs ".
+    •   Descarta cabeceras que empiecen por «Partido …».
+    •   Exige exactamente 21 filas y 20 códigos L/E/V (o dobles) por fila.
+    """
+    rows: list[list[str]] = []
+    for raw in text.strip().splitlines():
+        line = raw.strip()
+        if not line or " vs " not in line or _HEADER_RE.match(line):
+            continue  # descartar cabeceras, líneas vacías o mal formadas
+        parts = _SPLIT_RE.split(line)
         if len(parts) < 21:
-            continue
+            raise ValueError("Cada fila debe tener 1 descripción + 20 códigos L/E/V.")
         match = " ".join(parts[:-20])
         codes = parts[-20:]
         rows.append([match, *codes])
+    if len(rows) != 21:
+        raise ValueError("La malla debe contener exactamente 21 filas de partidos.")
     cols = ["match"] + [f"Q{i+1}" for i in range(20)]
-    df = pd.DataFrame(rows, columns=cols)
-    df = df.set_index("match")
+    df = pd.DataFrame(rows, columns=cols).set_index("match")
     return df
