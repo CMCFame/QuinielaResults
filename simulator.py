@@ -7,34 +7,35 @@ from probabilities import PROBABILITIES
 
 _OUTCOMES = np.array(["L", "E", "V"])
 
-def _sample_actual(n_iter: int = 10_000) -> np.ndarray:
-    """Generate matrix [n_iter × 21] of simulated outcomes."""
-    prob_arr = np.array([PROBABILITIES[i] for i in range(21)])  # 21×3
-    cum = prob_arr.cumsum(axis=1)
-    rnd = np.random.rand(n_iter, 21, 1)
-    draws = (rnd < cum).argmax(axis=2)
-    return _OUTCOMES[draws]  # n_iter × 21
 
-def simulate(df: pd.DataFrame, n_iter: int = 10_000) -> tuple[float, float]:
-    """Return (prob_regular, prob_revancha) for ≥11 and ≥6 aciertos."""
-    data = df.values  # rows = matches, cols = quinielas
-    data = data.T      # quinielas × 21
-    actuals = _sample_actual(n_iter)  # n_iter × 21
-    # Broadcast compare
-    hits = (data[:, None, :] == actuals[None, :, :])  # q × n × 21
-    # Support doubles (e.g. "L/E")
-    doubles_mask = np.vectorize(lambda s: "/" in s)(data)
-    if doubles_mask.any():
-        alt_hits = np.zeros_like(hits)
-        for qi, row in enumerate(data):
-            for mi, pred in enumerate(row):
+def _sample_actual(n: int) -> np.ndarray:
+    """Return an *n × 21* array of simulated outcomes."""
+    prob = np.array([PROBABILITIES[i] for i in range(21)])  # 21×3
+    cum  = prob.cumsum(1)
+    rnd  = np.random.rand(n, 21, 1)
+    idx  = (rnd < cum).argmax(2)
+    return _OUTCOMES[idx]
+
+
+def simulate(grid: pd.DataFrame, n_iter: int = 10_000) -> tuple[float, float]:
+    data = grid.values.T  # 20×21  → quinielas × partidos
+    actual = _sample_actual(n_iter)  # n_iter×21
+
+    # matriz aciertos: quiniela × n_iter × partido
+    hits = (data[:, None, :] == actual[None, :, :])
+
+    # soportar dobles ― ej.: "L/E"
+    doubles = np.vectorize(lambda s: "/" in s)(data)
+    if doubles.any():
+        alt = np.zeros_like(hits)
+        for q, row in enumerate(data):
+            for m, pred in enumerate(row):
                 if "/" in pred:
-                    for option in pred.split("/"):
-                        alt_hits[qi, :, mi] |= (option == actuals[:, mi])
-        hits = np.where(doubles_mask[:, None, :], alt_hits, hits)
-    scores = hits.sum(axis=2)  # q × n
-    best_reg = scores[:, :, :14].max(axis=0)
-    best_rev = scores[:, :, 14:].max(axis=0)
-    p_reg = (best_reg >= 11).mean()
-    p_rev = (best_rev >= 6).mean()
-    return p_reg, p_rev
+                    for opt in pred.split("/"):
+                        alt[q, :, m] |= (opt == actual[:, m])
+        hits = np.where(doubles[:, None, :], alt, hits)
+
+    scores = hits.sum(2)                # quiniela × n_iter
+    best_reg = scores[:, :, :14].max(0)  # mejores 14
+    best_rev = scores[:, :, 14:].max(0)  # mejores 7
+    return (best_reg >= 11).mean(), (best_rev >= 6).mean()
