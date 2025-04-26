@@ -30,4 +30,7 @@ def simulate(df:pd.DataFrame,n:int=10000)->tuple[float,float]:
                         alt[q,:,m]|=(opt==act[:,m])
         hits=np.where(dbl[:,None,:],alt,hits)
     sc=hits.sum(2)
-    return (sc[:,:,:14].max(0)>=11).mean(), (sc[:,:,14:].max(0)>=6).mean()
+    
+    # Corregido: accedemos correctamente a las dimensiones del array
+    # Dividimos los 21 partidos en 14 (regular) y 7 (revancha)
+    return (sc[:,:14].max(0)>=11).mean(), (sc[:,14:].max(0)>=6).mean()
