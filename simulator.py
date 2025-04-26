@@ -1,11 +1,11 @@
 # ==========================================================
-# simulator.py  (Monte‑Carlo core con detalle por quiniela)
+# simulator.py  (compatible con Python 3.12)
 # ==========================================================
 from __future__ import annotations
 import numpy as np, pandas as pd
 from probabilities import PROBABILITIES
 
-_OUT = np.array(["L","E","V"],"<U1")
+_OUT = np.array(["L","E","V"], dtype=str)
 
 
 def _sample(n:int)->np.ndarray:
@@ -42,12 +42,12 @@ def simulate(df:pd.DataFrame, n:int=10000) -> tuple[float, float, dict]:
     # Para cada quiniela (columna), calcular su efectividad
     for q in range(20):
         # Número promedio de aciertos por simulación para esta quiniela
-        avg_hits_reg = sc[q,:14].mean()
-        avg_hits_rev = sc[q,14:].mean() if q < len(sc) and sc.shape[1] > 14 else 0
+        avg_hits_reg = sc[q,:14].mean() if q < sc.shape[0] and sc.shape[1] > 14 else 0
+        avg_hits_rev = sc[q,14:].mean() if q < sc.shape[0] and sc.shape[1] > 14 else 0
         
         # Probabilidad de ganar por quiniela
-        prob_win_reg = (sc[q,:14] >= 11).mean()
-        prob_win_rev = (sc[q,14:] >= 6).mean() if q < len(sc) and sc.shape[1] > 14 else 0
+        prob_win_reg = (sc[q,:14] >= 11).mean() if q < sc.shape[0] and sc.shape[1] > 14 else 0
+        prob_win_rev = (sc[q,14:] >= 6).mean() if q < sc.shape[0] and sc.shape[1] > 14 else 0
         
         # Guardar los datos
         detail[column_names[q]] = {

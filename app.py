@@ -1,5 +1,5 @@
 # ==========================================================
-# app.py  (con visualización simplificada)
+# app.py  (compatible con Python 3.12)
 # ==========================================================
 import streamlit as st
 import pandas as pd
