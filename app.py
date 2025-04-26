@@ -1,9 +1,9 @@
 # ==========================================================
-# app.py  (con visualización detallada por quiniela)
+# app.py  (con visualización simplificada)
 # ==========================================================
-import streamlit as st, pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
+import streamlit as st
+import pandas as pd
+import numpy as np
 from parser import parse_heat_map
 from simulator import simulate
 
@@ -60,56 +60,26 @@ if st.button("Calcular"):
         # Mostrar visualizaciones
         st.subheader("Análisis detallado por quiniela")
         
-        tabs = st.tabs(["Tabla de datos", "Gráfico Regular", "Gráfico Revancha", "Mapa de calor"])
+        tabs = st.tabs(["Tabla de datos", "Gráfico Regular", "Gráfico Revancha"])
         
         with tabs[0]:
             st.dataframe(detail_df, use_container_width=True)
         
         with tabs[1]:
-            # Gráfico Regular
-            fig_reg = px.bar(
-                detail_df,
-                x='Quiniela',
-                y='Probabilidad Ganar (Regular) %',
-                color='Aciertos Promedio (Regular)',
-                color_continuous_scale='Viridis',
-                title='Probabilidad de ganar por quiniela (Regular)',
-                labels={'Probabilidad Ganar (Regular) %': 'Probabilidad %', 'Quiniela': 'Quiniela'}
+            # Gráfico Regular usando streamlit nativo
+            st.bar_chart(
+                detail_df.set_index('Quiniela')['Probabilidad Ganar (Regular) %'],
+                use_container_width=True
             )
-            fig_reg.update_layout(xaxis={'categoryorder': 'total descending'})
-            st.plotly_chart(fig_reg, use_container_width=True)
+            st.caption("Probabilidad de ganar por quiniela (Regular)")
         
         with tabs[2]:
-            # Gráfico Revancha
-            fig_rev = px.bar(
-                detail_df,
-                x='Quiniela',
-                y='Probabilidad Ganar (Revancha) %',
-                color='Aciertos Promedio (Revancha)',
-                color_continuous_scale='Viridis',
-                title='Probabilidad de ganar por quiniela (Revancha)',
-                labels={'Probabilidad Ganar (Revancha) %': 'Probabilidad %', 'Quiniela': 'Quiniela'}
+            # Gráfico Revancha usando streamlit nativo
+            st.bar_chart(
+                detail_df.set_index('Quiniela')['Probabilidad Ganar (Revancha) %'],
+                use_container_width=True
             )
-            fig_rev.update_layout(xaxis={'categoryorder': 'total descending'})
-            st.plotly_chart(fig_rev, use_container_width=True)
-            
-        with tabs[3]:
-            # Mapa de calor de las probabilidades
-            heat_data = detail_df.pivot(index='Quiniela', values=['Probabilidad Ganar (Regular) %', 'Probabilidad Ganar (Revancha) %'])
-            fig_heat = go.Figure(data=go.Heatmap(
-                z=heat_data.values,
-                x=heat_data.columns.tolist(),
-                y=heat_data.index.tolist(),
-                colorscale='Viridis',
-                colorbar=dict(title='Probabilidad %')
-            ))
-            fig_heat.update_layout(
-                title='Mapa de calor de probabilidades por quiniela',
-                xaxis_title='Tipo de juego',
-                yaxis_title='Quiniela',
-                height=600
-            )
-            st.plotly_chart(fig_heat, use_container_width=True)
+            st.caption("Probabilidad de ganar por quiniela (Revancha)")
             
     except Exception as ex:
         st.error(f"Error: {ex}")
