@@ -1,45 +1,33 @@
+# ==========================================================
+# simulator.py  (Monte‑Carlo core)
+# ==========================================================
 from __future__ import annotations
-import numpy as np
-import pandas as pd
+import numpy as np, pandas as pd
 from probabilities import PROBABILITIES
 
-_OUT = np.array(["L", "E", "V"], dtype="<U1")
+_OUT = np.array(["L","E","V"],"<U1")
 
 
-def _sample_outcomes(n_iter: int) -> np.ndarray:
-    """Devuelve matriz  (n_iter × 21)  de resultados simulados."""
-    prob = np.array([PROBABILITIES[i] for i in range(21)])         # 21×3
-    cum  = prob.cumsum(axis=1)                                     # CDF
-    rnd  = np.random.rand(n_iter, 21, 1)
-    idx  = (rnd < cum).argmax(axis=2)                              # 0-1-2
-    return _OUT[idx]                                               # n_iter×21
+def _sample(n:int)->np.ndarray:
+    prob=np.array([PROBABILITIES[i] for i in range(21)])
+    cum=prob.cumsum(1)
+    rnd=np.random.rand(n,21,1)
+    idx=(rnd<cum).argmax(2)
+    return _OUT[idx]
 
 
-def simulate(grid: pd.DataFrame, n_iter: int = 10_000,
-             *, debug: bool = False) -> tuple[float, float]:
-    """Monte-Carlo → (P≥11, P≥6).  Acepta dobles «L/E»."""
-    data = grid.values.astype(str).T                               # 20×21
-    actual = _sample_outcomes(n_iter)                              # n_iter×21
-
-    # matriz aciertos  (20 × n_iter × 21)
-    hits = data[:, None, :] == actual[None, :, :]
-
-    # manejar dobles
-    doubles = np.char.find(data, "/") >= 0
-    if doubles.any():
-        alt = np.zeros_like(hits)
-        for q, row in enumerate(data):
-            for m, pred in enumerate(row):
+def simulate(df:pd.DataFrame,n:int=10000)->tuple[float,float]:
+    data=df.values.astype(str).T             # 20×21
+    act=_sample(n)                           # n×21
+    hits=data[:,None,:]==act[None,:,:]
+    dbl=np.char.find(data,"/")>=0
+    if dbl.any():
+        alt=np.zeros_like(hits)
+        for q,row in enumerate(data):
+            for m,pred in enumerate(row):
                 if "/" in pred:
                     for opt in pred.split("/"):
-                        alt[q, :, m] |= (opt == actual[:, m])
-        hits = np.where(doubles[:, None, :], alt, hits)
-
-    scores = hits.sum(axis=2)                       # 20 × n_iter
-    best_regular  = scores[:, :, :14].max(axis=0)
-    best_revancha = scores[:, :, 14:].max(axis=0)
-
-    if debug:
-        print("Shapes -> data:", data.shape, "actual:", actual.shape, "hits:", hits.shape)
-
-    return (best_regular >= 11).mean(), (best_revancha >= 6).mean()
+                        alt[q,:,m]|=(opt==act[:,m])
+        hits=np.where(dbl[:,None,:],alt,hits)
+    sc=hits.sum(2)
+    return (sc[:,:,:14].max(0)>=11).mean(), (sc[:,:,14:].max(0)>=6).mean()

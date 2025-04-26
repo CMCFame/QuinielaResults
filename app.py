@@ -1,32 +1,39 @@
-import streamlit as st
+# ==========================================================
+# app.py  (text input + CSV uploader)
+# ==========================================================
+import streamlit as st, pandas as pd
 from parser import parse_heat_map
 from simulator import simulate
 
-st.set_page_config(page_title="Progol Monte-Carlo Analyzer", page_icon="⚽")
-
+st.set_page_config(page_title="Progol Monte‑Carlo Analyzer", page_icon="⚽")
 st.title("Progol 2278 · Calculadora de Probabilidades")
 
 st.markdown(
-    "Pegue **21 filas** con **20 códigos (L/E/V)** por fila. "
-    "Puede usar dobles «L/E». La cabecera “Partido C1…” se ignora.",
-    unsafe_allow_html=True,
-)
+"""
+### Opciones de carga
+* **CSV**: suba un archivo con columnas `match,Q1,…,Q20`.
+* **Pegado de texto**: 21 filas, 20 códigos L/E/V (o dobles `L/E`).
+""", unsafe_allow_html=True)
 
-text = st.text_area("Heat-map de 20 quinielas", height=360)
-iters = st.slider("Iteraciones Monte-Carlo", 1_000, 50_000, 10_000, 1_000)
-dbg   = st.checkbox("Depuración")
+# ---------- carga CSV ----------
+file = st.file_uploader("Cargar CSV", type="csv")
+text = st.text_area("…o pegue la malla aquí", height=320)
+iterations = st.slider("Iteraciones Monte‑Carlo", 1_000, 50_000, 10_000, 1_000)
 
-if st.button("Calcular") and text.strip():
+if st.button("Calcular"):
     try:
-        grid = parse_heat_map(text, debug=dbg)
-        if dbg:
-            st.write("Shape:", grid.shape)
-            st.dataframe(grid.head())
-        with st.spinner("Simulando…"):
-            p_reg, p_rev = simulate(grid, iters, debug=dbg)
-        st.success("Resultados")
-        st.metric("≥ 11 aciertos (Regular)",  f"{p_reg*100:.2f}%")
-        st.metric("≥ 6 aciertos (Revancha)", f"{p_rev*100:.2f}%")
-        st.caption(f"{iters:,} simulaciones Monte-Carlo")
-    except Exception as e:
-        st.error(f"Error: {e}")
+        if file:
+            df = pd.read_csv(file)
+            expected_cols = ["match"] + [f"Q{i+1}" for i in range(20)]
+            if list(df.columns) != expected_cols:
+                raise ValueError("CSV debe tener columnas 'match,Q1,…,Q20' en ese orden.")
+            df = df.set_index("match")
+            if len(df) != 21:
+                raise ValueError(f"CSV debe tener 21 filas; tiene {len(df)}.")
+        else:
+            df = parse_heat_map(text)
+        p_reg, p_rev = simulate(df, iterations)
+        st.metric("≥ 11 aciertos (Regular)",  f"{p_reg*100:.2f}%")
+        st.metric("≥ 6 aciertos (Revancha)", f"{p_rev*100:.2f}%")
+    except Exception as ex:
+        st.error(f"Error: {ex}")
