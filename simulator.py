@@ -1,5 +1,5 @@
 # ==========================================================
-# simulator.py  (Monte‑Carlo core)
+# simulator.py  (Monte‑Carlo core con detalle por quiniela)
 # ==========================================================
 from __future__ import annotations
 import numpy as np, pandas as pd
@@ -16,7 +16,7 @@ def _sample(n:int)->np.ndarray:
     return _OUT[idx]
 
 
-def simulate(df:pd.DataFrame,n:int=10000)->tuple[float,float]:
+def simulate(df:pd.DataFrame, n:int=10000) -> tuple[float, float, dict]:
     data=df.values.astype(str).T             # 20×21
     act=_sample(n)                           # n×21
     hits=data[:,None,:]==act[None,:,:]
@@ -31,6 +31,30 @@ def simulate(df:pd.DataFrame,n:int=10000)->tuple[float,float]:
         hits=np.where(dbl[:,None,:],alt,hits)
     sc=hits.sum(2)
     
-    # Corregido: accedemos correctamente a las dimensiones del array
-    # Dividimos los 21 partidos en 14 (regular) y 7 (revancha)
-    return (sc[:,:14].max(0)>=11).mean(), (sc[:,14:].max(0)>=6).mean()
+    # Calcular probabilidades generales
+    p_reg = (sc[:,:14].max(0)>=11).mean()
+    p_rev = (sc[:,14:].max(0)>=6).mean()
+    
+    # Calcular detalle por quiniela
+    detail = {}
+    column_names = [f"Q{i+1}" for i in range(20)]
+    
+    # Para cada quiniela (columna), calcular su efectividad
+    for q in range(20):
+        # Número promedio de aciertos por simulación para esta quiniela
+        avg_hits_reg = sc[q,:14].mean()
+        avg_hits_rev = sc[q,14:].mean() if q < len(sc) and sc.shape[1] > 14 else 0
+        
+        # Probabilidad de ganar por quiniela
+        prob_win_reg = (sc[q,:14] >= 11).mean()
+        prob_win_rev = (sc[q,14:] >= 6).mean() if q < len(sc) and sc.shape[1] > 14 else 0
+        
+        # Guardar los datos
+        detail[column_names[q]] = {
+            "avg_hits_reg": float(avg_hits_reg),
+            "avg_hits_rev": float(avg_hits_rev),
+            "prob_win_reg": float(prob_win_reg),
+            "prob_win_rev": float(prob_win_rev)
+        }
+    
+    return p_reg, p_rev, detail
