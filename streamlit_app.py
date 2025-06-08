@@ -13,16 +13,10 @@ import json
 import sys
 import os
 from pathlib import Path
+import logging
 
-# --- INICIO DE LA CORRECCIÓN ---
-
-# Añadir la ruta correcta al directorio del proyecto
-# Esto asegura que se puedan encontrar los módulos de 'progol_optimizer'
-# sin importar desde dónde se ejecute el script.
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
-# --- FIN DE LA CORRECCIÓN ---
+# Agregar path para imports
+sys.path.append(str(Path(__file__).parent))
 
 from progol_optimizer.main import ProgolOptimizer
 from progol_optimizer.config.constants import PROGOL_CONFIG
@@ -35,7 +29,7 @@ class ProgolStreamlitApp:
     def __init__(self):
         self.configurar_pagina()
         self.configurar_logging()
-       
+        
     def configurar_pagina(self):
         """Configuración inicial de la página Streamlit"""
         st.set_page_config(
