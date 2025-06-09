@@ -16,7 +16,7 @@ class PartidoClassifier:
         self.logger = logging.getLogger(__name__)
         
         # Importar configuración
-        from ..config.constants import PROGOL_CONFIG
+        from config.constants import PROGOL_CONFIG
         self.umbrales = PROGOL_CONFIG["UMBRALES_CLASIFICACION"]
         
         self.logger.debug(f"Umbrales de clasificación: {self.umbrales}")

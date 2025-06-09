@@ -17,7 +17,7 @@ class PortfolioValidator:
         self.logger = logging.getLogger(__name__)
         
         # Importar configuración
-        from ..config.constants import PROGOL_CONFIG
+        from config.constants import PROGOL_CONFIG
         self.config = PROGOL_CONFIG
         
         # Rangos históricos (página 2)
