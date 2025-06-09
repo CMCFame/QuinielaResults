@@ -1,4 +1,4 @@
-# progol_optimizer/ui/streamlit_app.py
+# streamlit_app.py
 """
 Interfaz gráfica Streamlit para Progol Optimizer
 Permite cargar datos, ejecutar optimización y ver resultados
@@ -15,11 +15,53 @@ import os
 from pathlib import Path
 import logging
 
-# Agregar path para imports
-sys.path.append(str(Path(__file__).parent))
+# SECCIÓN DE IMPORTS REPARADA - Detecta automáticamente la estructura
+current_dir = Path(__file__).parent
 
-from progol_optimizer.main import ProgolOptimizer
-from progol_optimizer.config.constants import PROGOL_CONFIG
+# Detectar si estamos en un directorio llamado prgoptimizer (Streamlit Cloud)
+# o si tenemos la estructura progol_optimizer normal
+if (current_dir / 'progol_optimizer').exists():
+    # Estructura normal con directorio progol_optimizer
+    sys.path.append(str(current_dir))
+    from progol_optimizer.main import ProgolOptimizer
+    from progol_optimizer.config.constants import PROGOL_CONFIG
+elif current_dir.name == 'prgoptimizer':
+    # Estamos dentro del repositorio prgoptimizer en Streamlit Cloud
+    # Los archivos están en el nivel actual, no en un subdirectorio
+    sys.path.append(str(current_dir))
+    
+    # Imports dinámicos usando la estructura actual
+    import importlib.util
+    
+    # Importar main.py
+    main_path = current_dir / 'main.py'
+    if main_path.exists():
+        spec = importlib.util.spec_from_file_location("main", main_path)
+        main_module = importlib.util.module_from_spec(spec)
+        sys.modules["main"] = main_module
+        spec.loader.exec_module(main_module)
+        ProgolOptimizer = main_module.ProgolOptimizer
+    else:
+        raise ImportError("No se encontró main.py")
+    
+    # Importar constants.py
+    config_path = current_dir / 'config' / 'constants.py'
+    if config_path.exists():
+        spec = importlib.util.spec_from_file_location("constants", config_path)
+        constants_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(constants_module)
+        PROGOL_CONFIG = constants_module.PROGOL_CONFIG
+    else:
+        raise ImportError("No se encontró config/constants.py")
+else:
+    # Fallback - buscar en directorios padre
+    parent = current_dir.parent
+    if (parent / 'progol_optimizer').exists():
+        sys.path.append(str(parent))
+        from progol_optimizer.main import ProgolOptimizer
+        from progol_optimizer.config.constants import PROGOL_CONFIG
+    else:
+        raise ImportError("No se pudo encontrar la estructura del proyecto progol_optimizer")
 
 class ProgolStreamlitApp:
     """
@@ -122,8 +164,19 @@ class ProgolStreamlitApp:
             if st.button("🎲 Usar Datos de Ejemplo", type="primary"):
                 with st.spinner("Generando datos de ejemplo..."):
                     try:
-                        from progol_optimizer.data.loader import DataLoader
-                        loader = DataLoader()
+                        # Importar dinámicamente el DataLoader
+                        if current_dir.name == 'prgoptimizer':
+                            # Estructura de Streamlit Cloud
+                            import importlib.util
+                            loader_path = current_dir / 'data' / 'loader.py'
+                            spec = importlib.util.spec_from_file_location("loader", loader_path)
+                            loader_module = importlib.util.module_from_spec(spec)
+                            spec.loader.exec_module(loader_module)
+                            loader = loader_module.DataLoader()
+                        else:
+                            from progol_optimizer.data.loader import DataLoader
+                            loader = DataLoader()
+                        
                         datos_ejemplo = loader._generar_datos_ejemplo()
                         st.session_state.datos_partidos = datos_ejemplo
                         st.success(f"✅ Generados {len(datos_ejemplo)} partidos de ejemplo")
@@ -424,7 +477,6 @@ class ProgolStreamlitApp:
         # Comparación con rangos históricos
         st.markdown("**Comparación con Rangos Históricos:**")
         
-        from progol_optimizer.config.constants import PROGOL_CONFIG
         rangos = PROGOL_CONFIG["RANGOS_HISTORICOS"]
         
         col_a, col_b, col_c = st.columns(3)
