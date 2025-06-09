@@ -116,44 +116,43 @@ class SatelliteGenerator:
         self.logger.info(f"✅ Generados {len(satelites)} satélites en {num_pares} pares válidos")
         return satelites
     
+    # Reemplaza la función original con esta versión corregida
+
     def _crear_par_anticorrelado(self, partidos: List[Dict[str, Any]], divisor_principal: int, par_id: int) -> Tuple[List[str], List[str]]:
         """
-        Crea par con anticorrelación REAL en DIVISOR específico
+        Crea par con anticorrelación REAL en TODOS los partidos DIVISOR.
         """
         quiniela_a = []
         quiniela_b = []
-        
+
         for i, partido in enumerate(partidos):
             clasificacion = partido["clasificacion"]
-            
+
             if clasificacion == "Ancla":
-                # IDÉNTICO en ambas quinielas del par
+                # IDÉNTICO en ambas quinielas del par, se fija el resultado más probable.
                 resultado = self._get_resultado_max_prob(partido)
                 quiniela_a.append(resultado)
                 quiniela_b.append(resultado)
-                
-            elif i == divisor_principal:
-                # ANTICORRELACIÓN: Invertir resultado en DIVISOR
+
+            elif clasificacion == "Divisor":
+                # ANTICORRELACIÓN: Invertir resultado en TODOS los divisores.
                 resultado_a = self._get_resultado_max_prob(partido)
                 resultado_b = self._get_resultado_alternativo(partido)
-                
                 quiniela_a.append(resultado_a)
                 quiniela_b.append(resultado_b)
-                
-                self.logger.debug(f"    Anticorrelación en partido {i}: {resultado_a} vs {resultado_b}")
-                
-            else:
-                # Variación controlada en otros partidos
-                if random.random() < 0.3:  # 30% de probabilidad de diferencia
-                    resultado_a = self._get_resultado_max_prob(partido)
-                    resultado_b = self._get_resultado_alternativo(partido)
-                else:
-                    # Misma elección en ambas
-                    resultado = self._get_resultado_max_prob(partido)
-                    resultado_a = resultado_b = resultado
-                
-                quiniela_a.append(resultado_a)
-                quiniela_b.append(resultado_b)
+                self.logger.debug(f"    Anticorrelación en Divisor {i}: {resultado_a} vs {resultado_b}")
+
+            else: # Para partidos Neutros o de TendenciaEmpate
+                # Se mantiene la misma elección en ambas quinielas para estabilidad.
+                resultado = self._get_resultado_max_prob(partido)
+                quiniela_a.append(resultado)
+                quiniela_b.append(resultado)
+
+        # Ajustar empates al final para asegurar que ambas quinielas cumplan la regla 4-6.
+        quiniela_a = self._ajustar_empates_satelite(quiniela_a, partidos)
+        quiniela_b = self._ajustar_empates_satelite(quiniela_b, partidos)
+
+        return quiniela_a, quiniela_b
         
         # Ajustar empates manteniendo anticorrelación
         quiniela_a = self._ajustar_empates_satelite(quiniela_a, partidos)
