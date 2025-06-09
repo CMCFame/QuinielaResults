@@ -221,7 +221,7 @@ class GRASPAnnealing:
         empates = resultados.count("E")
         
         # Importar límites
-        from progol_optimizer.config.constants import PROGOL_CONFIG
+        from config.constants import PROGOL_CONFIG
         min_empates = PROGOL_CONFIG["EMPATES_MIN"]
         max_empates = PROGOL_CONFIG["EMPATES_MAX"]
         
