@@ -104,7 +104,7 @@ class DataLoader:
         Genera probabilidades realistas basadas en la distribución histórica
         del documento (38% L, 29% E, 33% V) con variación natural
         """
-        from progol_optimizer.config.constants import PROGOL_CONFIG
+        from ..config.constants import PROGOL_CONFIG
         
         # Usar distribución histórica como base
         hist_dist = PROGOL_CONFIG["DISTRIBUCION_HISTORICA"]

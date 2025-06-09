@@ -20,7 +20,7 @@ class GRASPAnnealing:
         self.logger = logging.getLogger(__name__)
         
         # Importar configuración
-        from progol_optimizer.config.constants import PROGOL_CONFIG
+        from ..config.constants import PROGOL_CONFIG
         self.config = PROGOL_CONFIG["OPTIMIZACION"]
         
         self.max_iteraciones = self.config["max_iteraciones"]

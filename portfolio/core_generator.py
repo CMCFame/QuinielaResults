@@ -17,7 +17,7 @@ class CoreGenerator:
         self.logger = logging.getLogger(__name__)
         
         # Importar configuración
-        from progol_optimizer.config.constants import PROGOL_CONFIG
+        from ..config.constants import PROGOL_CONFIG
         self.config = PROGOL_CONFIG
         
         self.empates_min = self.config["EMPATES_MIN"]
