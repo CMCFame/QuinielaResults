@@ -1,6 +1,6 @@
 # streamlit_app.py
 """
-Interfaz gráfica Streamlit para Progol Optimizer test test
+Interfaz gráfica Streamlit para Progol Optimizer test test test
 Permite cargar datos, ejecutar optimización y ver resultados
 """
 
