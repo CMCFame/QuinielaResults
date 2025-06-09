@@ -1,98 +1,105 @@
 # progol_optimizer/main.py
 """
-Orquestador Principal - Integra todos los componentes del pipeline
-Basado en la metodología definitiva del documento técnico
+Orquestador Principal - Ejecuta el pipeline completo de optimización
+Integra todos los componentes según la metodología del documento
 """
 
 import logging
-from typing import Dict, List, Any, Optional
+import sys
+from pathlib import Path
+from typing import Dict, Any, List
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 class ProgolOptimizer:
     """
     Clase principal que orquesta todo el pipeline de optimización
     """
     
-    def __init__(self, debug: bool = False):
-        # Configurar logging
-        level = logging.DEBUG if debug else logging.INFO
-        logging.basicConfig(
-            level=level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
+    def __init__(self):
         self.logger = logging.getLogger(__name__)
         
-        # Inicializar componentes
-        self._inicializar_componentes()
-        
-        self.logger.info("ProgolOptimizer inicializado exitosamente")
-    
-    def _inicializar_componentes(self):
-        """Inicializa todos los componentes del sistema"""
+        # Importar componentes
         try:
-            from .data.loader import DataLoader
-            from .data.validator import DataValidator
-            from .models.classifier import PartidoClassifier
-            from .models.calibrator import BayesianCalibrator
-            from .portfolio.core_generator import CoreGenerator
-            from .portfolio.satellite_generator import SatelliteGenerator
-            from .portfolio.optimizer import GRASPAnnealing
-            from .validation.portfolio_validator import PortfolioValidator
-            from .export.exporter import PortfolioExporter
-            
-            self.data_loader = DataLoader()
-            self.data_validator = DataValidator()
-            self.classifier = PartidoClassifier()
-            self.calibrator = BayesianCalibrator()
-            self.core_generator = CoreGenerator()
-            self.satellite_generator = SatelliteGenerator()
-            self.optimizer = GRASPAnnealing()
-            self.portfolio_validator = PortfolioValidator()
-            self.exporter = PortfolioExporter()
-            
-            self.logger.debug("Todos los componentes inicializados correctamente")
-            
+            from progol_optimizer.data.loader import DataLoader
+            from progol_optimizer.data.validator import DataValidator
+            from progol_optimizer.models.classifier import PartidoClassifier
+            from progol_optimizer.models.calibrator import BayesianCalibrator
+            from progol_optimizer.portfolio.core_generator import CoreGenerator
+            from progol_optimizer.portfolio.satellite_generator import SatelliteGenerator
+            from progol_optimizer.portfolio.optimizer import GRASPAnnealing
+            from progol_optimizer.validation.portfolio_validator import PortfolioValidator
+            from progol_optimizer.export.exporter import PortfolioExporter
         except ImportError as e:
             self.logger.error(f"Error importando componentes: {e}")
-            raise
+            # Fallback imports usando paths relativos
+            sys.path.append(str(Path(__file__).parent))
+            
+            from data.loader import DataLoader
+            from data.validator import DataValidator
+            from models.classifier import PartidoClassifier
+            from models.calibrator import BayesianCalibrator
+            from portfolio.core_generator import CoreGenerator
+            from portfolio.satellite_generator import SatelliteGenerator
+            from portfolio.optimizer import GRASPAnnealing
+            from validation.portfolio_validator import PortfolioValidator
+            from export.exporter import PortfolioExporter
+        
+        # Inicializar componentes
+        self.data_loader = DataLoader()
+        self.data_validator = DataValidator()
+        self.classifier = PartidoClassifier()
+        self.calibrator = BayesianCalibrator()
+        self.core_generator = CoreGenerator()
+        self.satellite_generator = SatelliteGenerator()
+        self.optimizer = GRASPAnnealing()
+        self.portfolio_validator = PortfolioValidator()
+        self.exporter = PortfolioExporter()
+        
+        self.logger.info("✅ ProgolOptimizer inicializado correctamente")
     
     def procesar_concurso(self, archivo_datos: str = None, concurso_id: str = "2283") -> Dict[str, Any]:
         """
-        Procesa un concurso completo siguiendo el pipeline exacto del documento
+        Ejecuta el pipeline completo para un concurso
         
         Args:
-            archivo_datos: Ruta al archivo CSV con datos (opcional)
+            archivo_datos: Ruta al archivo CSV (opcional)
             concurso_id: ID del concurso
             
         Returns:
-            Dict: Resultado completo con portafolio, validación y archivos
+            Dict con todos los resultados
         """
-        self.logger.info(f"=== INICIANDO PROCESAMIENTO CONCURSO {concurso_id} ===")
+        self.logger.info(f"=== PROCESANDO CONCURSO {concurso_id} ===")
         
         try:
-            # PASO 1: Cargar y validar datos
-            self.logger.info("Paso 1: Cargando datos...")
+            # PASO 1: Cargar datos
+            self.logger.info("PASO 1: Cargando datos...")
             if archivo_datos:
                 partidos = self.data_loader.cargar_datos(archivo_datos)
             else:
                 partidos = self.data_loader._generar_datos_ejemplo()
             
+            # PASO 2: Validar datos
+            self.logger.info("PASO 2: Validando estructura de datos...")
             es_valido, errores = self.data_validator.validar_estructura(partidos)
             if not es_valido:
                 raise ValueError(f"Datos inválidos: {errores}")
             
-            self.logger.info(f"✅ Datos cargados y validados: {len(partidos)} partidos")
-            
-            # PASO 2: Clasificación y calibración
-            self.logger.info("Paso 2: Clasificando y calibrando partidos...")
+            # PASO 3: Clasificar y calibrar partidos
+            self.logger.info("PASO 3: Clasificando y calibrando partidos...")
             partidos_procesados = []
-            
             for i, partido in enumerate(partidos):
                 # Calibración bayesiana
                 partido_calibrado = self.calibrator.aplicar_calibracion_bayesiana(partido)
                 
-                # Clasificación según taxonomía
+                # Clasificación
                 clasificacion = self.classifier.clasificar_partido(partido_calibrado)
                 
+                # Agregar metadatos
                 partido_final = {
                     **partido_calibrado,
                     "id": i,
@@ -100,139 +107,90 @@ class ProgolOptimizer:
                 }
                 partidos_procesados.append(partido_final)
             
-            self.logger.info("✅ Clasificación y calibración completada")
-            
-            # PASO 3: Generación de Core
-            self.logger.info("Paso 3: Generando quinielas Core...")
+            # PASO 4: Generar quinielas Core
+            self.logger.info("PASO 4: Generando 4 quinielas Core...")
             quinielas_core = self.core_generator.generar_quinielas_core(partidos_procesados)
-            self.logger.info(f"✅ Generadas {len(quinielas_core)} quinielas Core")
             
-            # PASO 4: Generación de Satélites
-            self.logger.info("Paso 4: Generando satélites anticorrelados...")
+            # PASO 5: Generar satélites
+            self.logger.info("PASO 5: Generando 26 satélites en pares...")
             quinielas_satelites = self.satellite_generator.generar_pares_satelites(
                 partidos_procesados, 26
             )
-            self.logger.info(f"✅ Generados {len(quinielas_satelites)} satélites en pares")
             
-            # PASO 5: Optimización GRASP-Annealing
-            self.logger.info("Paso 5: Ejecutando optimización GRASP-Annealing...")
+            # PASO 6: Optimizar portafolio
+            self.logger.info("PASO 6: Ejecutando optimización GRASP-Annealing...")
             portafolio_inicial = quinielas_core + quinielas_satelites
-            
-            if len(portafolio_inicial) != 30:
-                raise ValueError(f"Portafolio debe tener 30 quinielas, tiene {len(portafolio_inicial)}")
-            
             portafolio_optimizado = self.optimizer.optimizar_portafolio_grasp_annealing(
                 portafolio_inicial, partidos_procesados
             )
-            self.logger.info("✅ Optimización completada")
             
-            # PASO 6: Validación completa
-            self.logger.info("Paso 6: Validando portafolio final...")
+            # PASO 7: Validar portafolio final
+            self.logger.info("PASO 7: Validando portafolio final...")
             resultado_validacion = self.portfolio_validator.validar_portafolio_completo(
                 portafolio_optimizado
             )
             
-            if resultado_validacion["es_valido"]:
-                self.logger.info("✅ Portafolio válido - cumple todas las reglas")
-            else:
-                self.logger.warning("⚠️ Portafolio con advertencias - revisar validación")
-            
-            # PASO 7: Exportación
-            self.logger.info("Paso 7: Exportando resultados...")
+            # PASO 8: Exportar resultados
+            self.logger.info("PASO 8: Exportando resultados...")
             archivos_exportados = self.exporter.exportar_portafolio_completo(
                 portafolio_optimizado,
                 partidos_procesados,
                 resultado_validacion["metricas"],
                 concurso_id
             )
-            self.logger.info(f"✅ Exportados {len(archivos_exportados)} archivos")
             
             # Resultado final
             resultado = {
+                "success": True,
                 "portafolio": portafolio_optimizado,
                 "partidos": partidos_procesados,
                 "validacion": resultado_validacion,
                 "metricas": resultado_validacion["metricas"],
                 "archivos_exportados": archivos_exportados,
-                "concurso_id": concurso_id,
-                "resumen": {
-                    "total_quinielas": len(portafolio_optimizado),
-                    "cores": len([q for q in portafolio_optimizado if q["tipo"] == "Core"]),
-                    "satelites": len([q for q in portafolio_optimizado if q["tipo"] == "Satelite"]),
-                    "es_valido": resultado_validacion["es_valido"]
-                }
+                "concurso_id": concurso_id
             }
             
-            self.logger.info("=== PROCESAMIENTO COMPLETADO EXITOSAMENTE ===")
+            self.logger.info(f"✅ CONCURSO {concurso_id} PROCESADO EXITOSAMENTE")
+            self.logger.info(f"   → {len(portafolio_optimizado)} quinielas generadas")
+            self.logger.info(f"   → Validación: {'✅ VÁLIDO' if resultado_validacion['es_valido'] else '❌ INVÁLIDO'}")
+            self.logger.info(f"   → {len(archivos_exportados)} archivos exportados")
+            
             return resultado
             
         except Exception as e:
-            self.logger.error(f"Error en procesamiento: {e}")
-            raise
+            self.logger.error(f"❌ Error procesando concurso: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "concurso_id": concurso_id
+            }
+
+
+def main():
+    """Función principal para uso por línea de comandos"""
+    import argparse
     
-    def procesar_datos_directos(self, partidos: List[Dict[str, Any]], concurso_id: str = "2283") -> Dict[str, Any]:
-        """
-        Procesa datos que ya están en memoria (para interfaz Streamlit)
-        
-        Args:
-            partidos: Lista de partidos ya cargados
-            concurso_id: ID del concurso
-            
-        Returns:
-            Dict: Resultado completo del procesamiento
-        """
-        # Reutilizar la lógica del procesamiento principal pero sin cargar datos
-        self.logger.info(f"Procesando datos directos para concurso {concurso_id}")
-        
-        # Validar datos
-        es_valido, errores = self.data_validator.validar_estructura(partidos)
-        if not es_valido:
-            raise ValueError(f"Datos inválidos: {errores}")
-        
-        # Continuar con el resto del pipeline como en procesar_concurso
-        # pero sin la carga inicial de datos
-        partidos_procesados = []
-        
-        for i, partido in enumerate(partidos):
-            partido_calibrado = self.calibrator.aplicar_calibracion_bayesiana(partido)
-            clasificacion = self.classifier.clasificar_partido(partido_calibrado)
-            
-            partido_final = {
-                **partido_calibrado,
-                "id": i,
-                "clasificacion": clasificacion
-            }
-            partidos_procesados.append(partido_final)
-        
-        # Continuar con generación, optimización, validación y exportación
-        quinielas_core = self.core_generator.generar_quinielas_core(partidos_procesados)
-        quinielas_satelites = self.satellite_generator.generar_pares_satelites(partidos_procesados, 26)
-        
-        portafolio_inicial = quinielas_core + quinielas_satelites
-        portafolio_optimizado = self.optimizer.optimizar_portafolio_grasp_annealing(
-            portafolio_inicial, partidos_procesados
-        )
-        
-        resultado_validacion = self.portfolio_validator.validar_portafolio_completo(portafolio_optimizado)
-        
-        archivos_exportados = self.exporter.exportar_portafolio_completo(
-            portafolio_optimizado,
-            partidos_procesados,
-            resultado_validacion["metricas"],
-            concurso_id
-        )
-        
-        return {
-            "portafolio": portafolio_optimizado,
-            "partidos": partidos_procesados,
-            "validacion": resultado_validacion,
-            "metricas": resultado_validacion["metricas"],
-            "archivos_exportados": archivos_exportados,
-            "concurso_id": concurso_id,
-            "resumen": {
-                "total_quinielas": len(portafolio_optimizado),
-                "cores": len([q for q in portafolio_optimizado if q["tipo"] == "Core"]),
-                "satelites": len([q for q in portafolio_optimizado if q["tipo"] == "Satelite"]),
-                "es_valido": resultado_validacion["es_valido"]
-            }
-        }
+    parser = argparse.ArgumentParser(description="Progol Optimizer - Metodología Definitiva")
+    parser.add_argument("--archivo", "-f", help="Archivo CSV con datos de partidos")
+    parser.add_argument("--concurso", "-c", default="2283", help="ID del concurso")
+    parser.add_argument("--debug", "-d", action="store_true", help="Modo debug")
+    
+    args = parser.parse_args()
+    
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+    
+    # Ejecutar optimización
+    optimizer = ProgolOptimizer()
+    resultado = optimizer.procesar_concurso(args.archivo, args.concurso)
+    
+    if resultado["success"]:
+        print(f"✅ Optimización exitosa para concurso {args.concurso}")
+        print(f"   Archivos generados en: outputs/")
+    else:
+        print(f"❌ Error: {resultado['error']}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

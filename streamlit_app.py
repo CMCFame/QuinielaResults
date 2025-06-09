@@ -1,4 +1,4 @@
-# progol_optimizer/ui/streamlit_app.py
+# streamlit_app.py
 """
 Interfaz gráfica Streamlit para Progol Optimizer
 Permite cargar datos, ejecutar optimización y ver resultados
@@ -15,11 +15,19 @@ import os
 from pathlib import Path
 import logging
 
-# Agregar path para imports
-sys.path.append(str(Path(__file__).parent))
+# REPARACIÓN DE IMPORTS - Ajustado para estructura de archivos actual
+# Los archivos están directamente en la raíz, no en subdirectorio progol_optimizer
+current_dir = Path(__file__).parent
+sys.path.insert(0, str(current_dir))
 
-from progol_optimizer.main import ProgolOptimizer
-from progol_optimizer.config.constants import PROGOL_CONFIG
+# Importar directamente desde la raíz
+try:
+    from main import ProgolOptimizer
+    from config.constants import PROGOL_CONFIG
+except ImportError as e:
+    st.error(f"Error importando módulos: {e}")
+    st.info("Verificar que existan los archivos main.py y config/constants.py")
+    st.stop()
 
 class ProgolStreamlitApp:
     """
@@ -122,7 +130,7 @@ class ProgolStreamlitApp:
             if st.button("🎲 Usar Datos de Ejemplo", type="primary"):
                 with st.spinner("Generando datos de ejemplo..."):
                     try:
-                        from progol_optimizer.data.loader import DataLoader
+                        from data.loader import DataLoader
                         loader = DataLoader()
                         datos_ejemplo = loader._generar_datos_ejemplo()
                         st.session_state.datos_partidos = datos_ejemplo
@@ -424,7 +432,6 @@ class ProgolStreamlitApp:
         # Comparación con rangos históricos
         st.markdown("**Comparación con Rangos Históricos:**")
         
-        from progol_optimizer.config.constants import PROGOL_CONFIG
         rangos = PROGOL_CONFIG["RANGOS_HISTORICOS"]
         
         col_a, col_b, col_c = st.columns(3)
