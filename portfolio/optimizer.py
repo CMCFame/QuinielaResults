@@ -10,6 +10,7 @@ import math
 import numpy as np
 from typing import List, Dict, Any, Tuple
 from itertools import combinations
+from scipy.stats import poisson_binomial # <--- ADD THIS IMPORT
 
 class GRASPAnnealing:
     """
@@ -124,36 +125,33 @@ class GRASPAnnealing:
         F = 1 - producto
         return F
 
+    # --- REPLACE THE OLD FUNCTION WITH THIS NEW ONE ---
     def _calcular_prob_11_aciertos(self, resultados: List[str], partidos: List[Dict[str, Any]]) -> float:
         """
         Calcula la probabilidad de obtener ≥11 aciertos para una quiniela
-        usando simulación Monte Carlo
+        usando la distribución Poisson-Binomial para mayor precisión y velocidad.
         """
-        num_simulaciones = 1000
-        aciertos_11_plus = 0
+        # 1. Obtener las probabilidades de acierto para cada partido en la quiniela.
+        probabilidades_acierto = []
+        for i, resultado_predicho in enumerate(resultados):
+            partido = partidos[i]
+            if resultado_predicho == "L":
+                probabilidades_acierto.append(partido["prob_local"])
+            elif resultado_predicho == "E":
+                probabilidades_acierto.append(partido["prob_empate"])
+            else: # "V"
+                probabilidades_acierto.append(partido["prob_visitante"])
 
-        for _ in range(num_simulaciones):
-            aciertos = 0
+        # 2. Crear un objeto de la distribución Poisson-Binomial.
+        mu = poisson_binomial(p=np.array(probabilidades_acierto))
 
-            for i, resultado_predicho in enumerate(resultados):
-                partido = partidos[i]
+        # 3. Calcular la probabilidad de 11 o más aciertos.
+        #    Usamos la función de supervivencia (1 - CDF) para Pr[X >= k].
+        #    sf(k) es Pr[X > k], por lo que sf(10) nos da Pr[X >= 11].
+        prob_11_o_mas = mu.sf(k=10)
 
-                # Generar resultado real según probabilidades
-                rand = random.random()
-                if rand < partido["prob_local"]:
-                    resultado_real = "L"
-                elif rand < partido["prob_local"] + partido["prob_empate"]:
-                    resultado_real = "E"
-                else:
-                    resultado_real = "V"
-
-                if resultado_predicho == resultado_real:
-                    aciertos += 1
-
-            if aciertos >= 11:
-                aciertos_11_plus += 1
-
-        return aciertos_11_plus / num_simulaciones
+        return prob_11_o_mas
+    # --- END OF REPLACEMENT ---
 
     def _generar_candidatos_vecinos(self, portafolio_actual: List[Dict[str, Any]],
                                   partidos: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
