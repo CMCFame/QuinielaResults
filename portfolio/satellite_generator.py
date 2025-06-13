@@ -47,31 +47,13 @@ class SatelliteGenerator:
         
         self.logger.info(f"Generando {num_satelites} satélites en {num_pares} pares anticorrelados...")
         
-        # Identificar índices de partidos DIVISOR
-        divisores_indices = [
-            i for i, partido in enumerate(partidos_clasificados)
-            if partido["clasificacion"] == "Divisor"
-        ]
-        
-        if not divisores_indices:
-            self.logger.warning("No hay partidos DIVISOR - generando con NEUTROS")
-            divisores_indices = [
-                i for i, partido in enumerate(partidos_clasificados)
-                if partido["clasificacion"] == "Neutro"
-            ]
-        
-        self.logger.debug(f"Divisores disponibles: {len(divisores_indices)} partidos")
-        
         satelites = []
         
         # Generar cada par de satélites
         for par_id in range(num_pares):
-            # Seleccionar DIVISOR específico para este par (rotatorio)
-            divisor_principal = divisores_indices[par_id % len(divisores_indices)]
-            
             # Crear par anticorrelado
             quiniela_a, quiniela_b = self._crear_par_anticorrelado(
-                partidos_clasificados, divisor_principal, par_id
+                partidos_clasificados, par_id
             )
             
             # Verificar correlación
@@ -83,7 +65,6 @@ class SatelliteGenerator:
                     "tipo": "Satelite",
                     "resultados": quiniela_a,
                     "par_id": par_id,
-                    "divisor_principal": divisor_principal,
                     "correlacion_jaccard": correlacion,
                     "empates": quiniela_a.count("E"),
                     "distribución": {
@@ -97,7 +78,6 @@ class SatelliteGenerator:
                     "tipo": "Satelite",
                     "resultados": quiniela_b,
                     "par_id": par_id,
-                    "divisor_principal": divisor_principal,
                     "correlacion_jaccard": correlacion,
                     "empates": quiniela_b.count("E"),
                     "distribución": {
@@ -108,57 +88,75 @@ class SatelliteGenerator:
                 }
             ])
             
-            self.logger.debug(f"  Par {par_id+1}: divisor={divisor_principal}, correlación={correlacion:.3f}")
+            self.logger.debug(f"  Par {par_id+1}: correlación={correlacion:.3f}")
         
         # Validar todos los pares
-        self._validar_satelites(satelites, partidos_clasificados)
+        self._validar_satelites(satelites)
         
         self.logger.info(f"✅ Generados {len(satelites)} satélites en {num_pares} pares válidos")
         return satelites
-    
-    # Reemplaza la función original con esta versión corregida
 
-    def _crear_par_anticorrelado(self, partidos: List[Dict[str, Any]], divisor_principal: int, par_id: int) -> Tuple[List[str], List[str]]:
+    # --- INICIO DE CORRECCIÓN: Lógica mejorada para crear pares ---
+    def _crear_par_anticorrelado(self, partidos: List[Dict[str, Any]], par_id: int) -> Tuple[List[str], List[str]]:
         """
-        Crea par con anticorrelación REAL en TODOS los partidos DIVISOR.
+        Crea par anticorrelado de forma robusta.
+        - Invierte TODOS los partidos Divisor.
+        - Si es necesario, invierte partidos Neutros para garantizar Jaccard <= 0.57 (máx 7 coincidencias).
+        - Mantiene ANCLAS idénticas.
         """
-        quiniela_a = []
-        quiniela_b = []
+        quiniela_a = [""] * 14
+        quiniela_b = [""] * 14
 
-        for i, partido in enumerate(partidos):
-            clasificacion = partido["clasificacion"]
+        # 1. Clasificar índices de partidos
+        anclas_indices = [i for i, p in enumerate(partidos) if p["clasificacion"] == "Ancla"]
+        divisores_indices = [i for i, p in enumerate(partidos) if p["clasificacion"] == "Divisor"]
+        neutros_indices = [i for i, p in enumerate(partidos) if p["clasificacion"] not in ["Ancla", "Divisor"]]
 
-            if clasificacion == "Ancla":
-                # IDÉNTICO en ambas quinielas del par, se fija el resultado más probable.
-                resultado = self._get_resultado_max_prob(partido)
-                quiniela_a.append(resultado)
-                quiniela_b.append(resultado)
+        # 2. Asignar ANCLAS (idénticas)
+        for i in anclas_indices:
+            resultado = self._get_resultado_max_prob(partidos[i])
+            quiniela_a[i] = resultado
+            quiniela_b[i] = resultado
 
-            elif clasificacion == "Divisor":
-                # ANTICORRELACIÓN: Invertir resultado en TODOS los divisores.
-                resultado_a = self._get_resultado_max_prob(partido)
-                resultado_b = self._get_resultado_alternativo(partido)
-                quiniela_a.append(resultado_a)
-                quiniela_b.append(resultado_b)
-                self.logger.debug(f"    Anticorrelación en Divisor {i}: {resultado_a} vs {resultado_b}")
+        # 3. Asignar DIVISORES (anticorrelados)
+        for i in divisores_indices:
+            resultado_a = self._get_resultado_max_prob(partidos[i])
+            resultado_b = self._get_resultado_alternativo(partidos[i])
+            quiniela_a[i] = resultado_a
+            quiniela_b[i] = resultado_b
 
-            else: # Para partidos Neutros o de TendenciaEmpate
-                # Se mantiene la misma elección en ambas quinielas para estabilidad.
-                resultado = self._get_resultado_max_prob(partido)
-                quiniela_a.append(resultado)
-                quiniela_b.append(resultado)
+        # 4. Determinar si se necesitan más diferencias en NEUTROS
+        num_diferencias_actuales = len(divisores_indices)
+        # Para Jaccard <= 0.57, se necesitan al menos 7 diferencias (14 - 7 = 7 coincidencias; 7/14 = 0.5)
+        diferencias_necesarias = 7 
+        diferencias_faltantes = max(0, diferencias_necesarias - num_diferencias_actuales)
 
-        # Ajustar empates al final para asegurar que ambas quinielas cumplan la regla 4-6.
+        # Seleccionar neutros para invertir de forma aleatoria pero determinista para el par
+        random.seed(par_id)
+        neutros_a_invertir = random.sample(neutros_indices, min(diferencias_faltantes, len(neutros_indices)))
+        
+        self.logger.debug(f"    Par {par_id}: {num_diferencias_actuales} difs de Divisores. Invirtiendo {len(neutros_a_invertir)} Neutros.")
+
+        # 5. Asignar NEUTROS
+        for i in neutros_indices:
+            if i in neutros_a_invertir:
+                # Invertir para crear más diferencias
+                resultado_a = self._get_resultado_max_prob(partidos[i])
+                resultado_b = self._get_resultado_alternativo(partidos[i])
+                quiniela_a[i] = resultado_a
+                quiniela_b[i] = resultado_b
+            else:
+                # Mantener idénticos
+                resultado = self._get_resultado_max_prob(partidos[i])
+                quiniela_a[i] = resultado
+                quiniela_b[i] = resultado
+
+        # 6. Ajustar empates al final para ambas quinielas
         quiniela_a = self._ajustar_empates_satelite(quiniela_a, partidos)
         quiniela_b = self._ajustar_empates_satelite(quiniela_b, partidos)
-
-        return quiniela_a, quiniela_b
-        
-        # Ajustar empates manteniendo anticorrelación
-        quiniela_a = self._ajustar_empates_satelite(quiniela_a, partidos)
-        quiniela_b = self._ajustar_empates_satelite(quiniela_b, partidos)
         
         return quiniela_a, quiniela_b
+    # --- FIN DE CORRECCIÓN ---
     
     def _get_resultado_max_prob(self, partido: Dict[str, Any]) -> str:
         """Obtiene el resultado de máxima probabilidad"""
@@ -177,19 +175,12 @@ class SatelliteGenerator:
             "V": partido["prob_visitante"]
         }
         
-        # Ordenar por probabilidad descendente
         probs_ordenadas = sorted(probs.items(), key=lambda x: x[1], reverse=True)
-        
-        # Estrategia: si primera es L/V, usar la otra; si primera es E, usar segunda opción
         primera = probs_ordenadas[0][0]
         
-        if primera == "L":
-            return "V"  # Intercambio directo L<->V
-        elif primera == "V":
-            return "L"  # Intercambio directo V<->L
-        else:  # primera == "E"
-            # Si empate es máximo, usar segunda opción
-            return probs_ordenadas[1][0] if len(probs_ordenadas) > 1 else "L"
+        if primera == "L": return "V"
+        if primera == "V": return "L"
+        return probs_ordenadas[1][0] if len(probs_ordenadas) > 1 else "L"
     
     def _ajustar_empates_satelite(self, quiniela: List[str], partidos: List[Dict[str, Any]]) -> List[str]:
         """
@@ -197,13 +188,11 @@ class SatelliteGenerator:
         """
         empates_actuales = quiniela.count("E")
         
-        # Si está en rango, no hacer nada
         if self.empates_min <= empates_actuales <= self.empates_max:
             return quiniela
         
         quiniela_ajustada = quiniela.copy()
         
-        # Ajustes similares a Core pero evitando tocar ANCLAS
         if empates_actuales > self.empates_max:
             exceso = empates_actuales - self.empates_max
             self._reducir_empates_satelite(quiniela_ajustada, partidos, exceso)
@@ -219,16 +208,12 @@ class SatelliteGenerator:
                      for i, res in enumerate(quiniela) 
                      if res == "E" and partidos[i]["clasificacion"] != "Ancla"]
         
-        candidatos.sort(key=lambda x: x[1])  # Menor probabilidad primero
+        candidatos.sort(key=lambda x: x[1])
         
         for i in range(min(reducir, len(candidatos))):
             idx = candidatos[i][0]
             partido = partidos[idx]
-            
-            if partido["prob_local"] > partido["prob_visitante"]:
-                quiniela[idx] = "L"
-            else:
-                quiniela[idx] = "V"
+            quiniela[idx] = "L" if partido["prob_local"] > partido["prob_visitante"] else "V"
     
     def _aumentar_empates_satelite(self, quiniela: List[str], partidos: List[Dict[str, Any]], aumentar: int):
         """Aumenta empates evitando ANCLAS"""
@@ -236,7 +221,7 @@ class SatelliteGenerator:
                      for i, res in enumerate(quiniela) 
                      if res in ["L", "V"] and partidos[i]["clasificacion"] != "Ancla"]
         
-        candidatos.sort(key=lambda x: x[1], reverse=True)  # Mayor probabilidad primero
+        candidatos.sort(key=lambda x: x[1], reverse=True)
         
         for i in range(min(aumentar, len(candidatos))):
             idx = candidatos[i][0]
@@ -245,49 +230,36 @@ class SatelliteGenerator:
     def _calcular_correlacion_jaccard(self, quiniela_a: List[str], quiniela_b: List[str]) -> float:
         """
         Calcula correlación de Jaccard entre dos quinielas
-        Jaccard = |intersección| / |unión|
         """
-        if len(quiniela_a) != len(quiniela_b):
-            return 0.0
-        
+        if len(quiniela_a) != len(quiniela_b): return 0.0
         coincidencias = sum(1 for a, b in zip(quiniela_a, quiniela_b) if a == b)
-        jaccard = coincidencias / len(quiniela_a)
-        
-        return jaccard
+        return coincidencias / len(quiniela_a)
     
-    def _validar_satelites(self, satelites: List[Dict[str, Any]], partidos: List[Dict[str, Any]]):
+    def _validar_satelites(self, satelites: List[Dict[str, Any]]):
         """
         Valida que todos los satélites cumplan las reglas
         """
         self.logger.debug("Validando satélites...")
         
-        # Validar cada satélite individual
         for satelite in satelites:
-            quiniela = satelite["resultados"]
-            empates = quiniela.count("E")
-            
-            # Validar rango de empates
+            empates = satelite["resultados"].count("E")
             if not (self.empates_min <= empates <= self.empates_max):
                 raise ValueError(f"{satelite['id']}: empates {empates} fuera del rango")
-            
-            # Validar longitud
-            if len(quiniela) != 14:
+            if len(satelite["resultados"]) != 14:
                 raise ValueError(f"{satelite['id']}: longitud incorrecta")
         
-        # Validar correlaciones por pares
         pares = {}
         for satelite in satelites:
             par_id = satelite["par_id"]
-            if par_id not in pares:
-                pares[par_id] = []
-            pares[par_id].append(satelite)
+            pares.setdefault(par_id, []).append(satelite)
         
         for par_id, par_satelites in pares.items():
             if len(par_satelites) != 2:
                 raise ValueError(f"Par {par_id}: debe tener exactamente 2 satélites")
             
-            correlacion = par_satelites[0]["correlacion_jaccard"]
-            if correlacion > self.correlacion_max:
-                raise ValueError(f"Par {par_id}: correlación {correlacion:.3f} > {self.correlacion_max}")
+            # Recalcula la correlación final para ser extra seguro
+            correlacion_final = self._calcular_correlacion_jaccard(par_satelites[0]['resultados'], par_satelites[1]['resultados'])
+            if correlacion_final > self.correlacion_max:
+                raise ValueError(f"Par {par_id}: correlación {correlacion_final:.3f} > {self.correlacion_max}")
         
         self.logger.debug("✅ Todos los satélites son válidos")
