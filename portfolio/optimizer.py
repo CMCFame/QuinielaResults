@@ -11,14 +11,12 @@ import numpy as np
 from typing import List, Dict, Any, Tuple
 from itertools import combinations
 
-# --- INICIO DE CAMBIOS: Implementación de Fallback ---
 # Se intenta importar el método preciso. Si falla, se usará la simulación.
 try:
     from scipy.stats import poisson_binomial
     POISSON_BINOMIAL_AVAILABLE = True
 except ImportError:
     POISSON_BINOMIAL_AVAILABLE = False
-# --- FIN DE CAMBIOS ---
 
 class GRASPAnnealing:
     """
@@ -40,12 +38,10 @@ class GRASPAnnealing:
         self.logger.debug(f"Optimizador GRASP-Annealing configurado: "
                          f"max_iter={self.max_iteraciones}, T0={self.temperatura_inicial}")
         
-        # --- INICIO DE CAMBIOS: Log para el método de cálculo ---
         if POISSON_BINOMIAL_AVAILABLE:
             self.logger.info("Usando método de cálculo Poisson-Binomial (preciso y rápido).")
         else:
             self.logger.warning("Función 'poisson_binomial' no disponible. Usando simulación Monte Carlo como fallback.")
-        # --- FIN DE CAMBIOS ---
 
     def optimizar_portafolio_grasp_annealing(self, quinielas_iniciales: List[Dict[str, Any]],
                                            partidos: List[Dict[str, Any]], progress_callback=None) -> List[Dict[str, Any]]:
@@ -111,7 +107,6 @@ class GRASPAnnealing:
             producto *= (1 - prob_11_plus)
         return 1 - producto
 
-    # --- INICIO DE CAMBIOS: Función unificada con fallback ---
     def _calcular_prob_11_aciertos(self, resultados: List[str], partidos: List[Dict[str, Any]]) -> float:
         """
         Calcula la probabilidad de obtener ≥11 aciertos.
@@ -151,7 +146,6 @@ class GRASPAnnealing:
                 if aciertos >= 11:
                     aciertos_11_plus += 1
             return aciertos_11_plus / num_simulaciones
-    # --- FIN DE CAMBIOS ---
 
     def _generar_candidatos_vecinos(self, portafolio_actual: List[Dict[str, Any]],
                                   partidos: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
@@ -185,12 +179,25 @@ class GRASPAnnealing:
                             return candidatos
         return candidatos
 
+    # --- INICIO DE CORRECCIÓN ---
     def _obtener_resultado_alternativo(self, resultado_actual: str, partido: Dict[str, Any]) -> str:
         """Obtiene un resultado alternativo válido diferente al actual."""
         opciones = ["L", "E", "V"]
         opciones.remove(resultado_actual)
-        probs_alternativas = {op: partido[f"prob_{op.lower()}"] for op in opciones}
+        
+        # Mapeo correcto de las claves de probabilidad
+        full_keys = {
+            "L": "prob_local",
+            "E": "prob_empate",
+            "V": "prob_visitante"
+        }
+
+        # Construir diccionario con las probabilidades de las opciones restantes
+        probs_alternativas = {op: partido[full_keys[op]] for op in opciones}
+        
+        # Devolver la opción con la máxima probabilidad
         return max(probs_alternativas, key=probs_alternativas.get)
+    # --- FIN DE CORRECCIÓN ---
 
     def _es_quiniela_valida(self, resultados: List[str]) -> bool:
         """Verifica que una quiniela cumple las reglas básicas."""
