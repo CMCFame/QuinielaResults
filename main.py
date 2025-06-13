@@ -9,6 +9,19 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, List
 
+# --- Imports Corregidos ---
+# Se importan los componentes directamente, sin la ruta 'progol_optimizer'
+# y fuera de la clase para asegurar que estén disponibles.
+from data.loader import DataLoader
+from data.validator import DataValidator
+from models.classifier import PartidoClassifier
+from models.calibrator import BayesianCalibrator
+from portfolio.core_generator import CoreGenerator
+from portfolio.satellite_generator import SatelliteGenerator
+from portfolio.optimizer import GRASPAnnealing
+from validation.portfolio_validator import PortfolioValidator
+from export.exporter import PortfolioExporter
+
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
@@ -23,31 +36,7 @@ class ProgolOptimizer:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         
-        # Importar componentes
-        try:
-            from progol_optimizer.data.loader import DataLoader
-            from progol_optimizer.data.validator import DataValidator
-            from progol_optimizer.models.classifier import PartidoClassifier
-            from progol_optimizer.models.calibrator import BayesianCalibrator
-            from progol_optimizer.portfolio.core_generator import CoreGenerator
-            from progol_optimizer.portfolio.satellite_generator import SatelliteGenerator
-            from progol_optimizer.portfolio.optimizer import GRASPAnnealing
-            from progol_optimizer.validation.portfolio_validator import PortfolioValidator
-            from progol_optimizer.export.exporter import PortfolioExporter
-        except ImportError as e:
-            self.logger.error(f"Error importando componentes: {e}")
-            # Fallback imports usando paths relativos
-            sys.path.append(str(Path(__file__).parent))
-            
-            from data.loader import DataLoader
-            from data.validator import DataValidator
-            from models.classifier import PartidoClassifier
-            from models.calibrator import BayesianCalibrator
-            from portfolio.core_generator import CoreGenerator
-            from portfolio.satellite_generator import SatelliteGenerator
-            from portfolio.optimizer import GRASPAnnealing
-            from validation.portfolio_validator import PortfolioValidator
-            from export.exporter import PortfolioExporter
+        # --- Bloque de importación original eliminado de aquí ---
         
         # Inicializar componentes
         self.data_loader = DataLoader()
