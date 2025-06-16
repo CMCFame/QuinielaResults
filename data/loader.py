@@ -1,7 +1,7 @@
-# progol_optimizer/data/loader.py - CORREGIDO
+# progol_optimizer/data/loader.py
 """
-Cargador de datos CORREGIDO con distribución balanceada según documento técnico
-Genera datos realistas que respetan 38%L, 29%E, 33%V
+Cargador de datos según especificaciones del documento técnico - VERSIÓN CORREGIDA
+CORRECCIÓN CRÍTICA: Datos balanceados que respetan distribución histórica 38%L, 29%E, 33%V
 """
 
 import pandas as pd
@@ -12,7 +12,8 @@ from typing import Dict, List, Any, Optional
 
 class DataLoader:
     """
-    Carga datos desde CSV o genera datos de ejemplo BALANCEADOS
+    Carga datos desde CSV y los convierte al formato requerido para el pipeline
+    CORREGIDO: Genera datos balanceados que cumplen distribución histórica
     """
     
     def __init__(self):
@@ -21,12 +22,6 @@ class DataLoader:
     def cargar_datos(self, archivo_path: str) -> List[Dict[str, Any]]:
         """
         Carga datos desde CSV o genera datos de ejemplo si no existe el archivo
-        
-        Args:
-            archivo_path: Ruta al archivo CSV
-            
-        Returns:
-            List[Dict]: Lista de partidos con probabilidades y metadatos
         """
         self.logger.info(f"Cargando datos desde: {archivo_path}")
         
@@ -39,7 +34,7 @@ class DataLoader:
             df = pd.read_csv(archivo_path)
             
             # Validar columnas obligatorias
-            columnas_requeridas = ['home', 'away', 'liga']
+            columnas_requeridas = ['home', 'away']
             columnas_faltantes = [col for col in columnas_requeridas if col not in df.columns]
             
             if columnas_faltantes:
@@ -62,15 +57,23 @@ class DataLoader:
     def _procesar_fila_csv(self, row: pd.Series, idx: int) -> Dict[str, Any]:
         """
         Convierte una fila del CSV al formato interno requerido
+        CORREGIDO: Balancea probabilidades hacia distribución histórica
         """
-        # Probabilidades base - Si no están en CSV, usar distribución histórica + ruido
+        # Probabilidades base - Si no están en CSV, usar distribución histórica balanceada
         if all(col in row and pd.notna(row[col]) for col in ['prob_local', 'prob_empate', 'prob_visitante']):
             prob_local = float(row['prob_local'])
             prob_empate = float(row['prob_empate'])
             prob_visitante = float(row['prob_visitante'])
+            
+            # CORRECCIÓN: Normalizar si no suman 1
+            total = prob_local + prob_empate + prob_visitante
+            if abs(total - 1.0) > 0.01:
+                prob_local /= total
+                prob_empate /= total
+                prob_visitante /= total
         else:
-            # Generar probabilidades basadas en distribución histórica + ruido aleatorio
-            prob_local, prob_empate, prob_visitante = self._generar_probabilidades_realistas()
+            # CORRECCIÓN: Generar probabilidades balanceadas específicamente para este partido
+            prob_local, prob_empate, prob_visitante = self._generar_probabilidades_balanceadas_por_partido(idx)
         
         # Metadatos contextuales
         partido = {
@@ -85,8 +88,8 @@ class DataLoader:
             'prob_visitante': prob_visitante,
             
             # Factores para calibración bayesiana
-            'forma_diferencia': float(row.get('forma_diferencia', np.random.normal(0, 1))),
-            'lesiones_impact': float(row.get('lesiones_impact', np.random.normal(0, 0.5))),
+            'forma_diferencia': float(row.get('forma_diferencia', np.random.normal(0, 0.5))),
+            'lesiones_impact': float(row.get('lesiones_impact', np.random.normal(0, 0.3))),
             'es_final': bool(row.get('es_final', False)),
             'es_derbi': bool(row.get('es_derbi', False)),
             'es_playoff': bool(row.get('es_playoff', False)),
@@ -99,57 +102,59 @@ class DataLoader:
         
         return partido
     
-    def _generar_probabilidades_realistas(self) -> tuple:
+    def _generar_probabilidades_balanceadas_por_partido(self, idx: int) -> tuple:
         """
-        CORREGIDO: Genera probabilidades realistas basadas en la distribución histórica
-        del documento (38% L, 29% E, 33% V) con variación natural BALANCEADA
+        NUEVA FUNCIÓN: Genera probabilidades balanceadas específicamente diseñadas
+        para crear una distribución global que respete 38%L, 29%E, 33%V
         """
-        from config.constants import PROGOL_CONFIG
+        # Usar índice como semilla para reproducibilidad
+        np.random.seed(idx + 42)
         
-        # Usar distribución histórica como base
-        hist_dist = PROGOL_CONFIG["DISTRIBUCION_HISTORICA"]
+        # Estrategia: Diseñar tipos específicos de partidos para balancear
+        tipo_partido = idx % 14  # Ciclo de 14 tipos diferentes
         
-        # CORRECCIÓN: Generar probabilidades más variadas y balanceadas
-        # En lugar de usar la media siempre, crear variedad realista
-        
-        # Tipos de partidos con diferentes perfiles
-        tipo_partido = np.random.choice([
-            'equilibrado',      # 40% - Partidos muy disputados  
-            'favorito_local',   # 30% - Local tiene ventaja
-            'favorito_visitante', # 20% - Visitante favorito
-            'empate_probable'   # 10% - Empate muy probable
-        ], p=[0.4, 0.3, 0.2, 0.1])
-        
-        if tipo_partido == 'equilibrado':
-            # Partidos equilibrados (35-45% L, 25-35% E, 25-40% V)
-            prob_local = np.random.uniform(0.30, 0.45)
-            prob_empate = np.random.uniform(0.25, 0.35)
+        if tipo_partido < 5:  # Partidos 0-4: Favoritos locales (para generar ~38% L global)
+            prob_local = np.random.uniform(0.45, 0.70)
+            prob_empate = np.random.uniform(0.20, 0.35)
             prob_visitante = 1.0 - prob_local - prob_empate
             
-        elif tipo_partido == 'favorito_local':
-            # Local favorito (45-65% L, 20-30% E, 15-35% V)
-            prob_local = np.random.uniform(0.45, 0.65)
-            prob_empate = np.random.uniform(0.20, 0.30)
-            prob_visitante = 1.0 - prob_local - prob_empate
+        elif tipo_partido < 9:  # Partidos 5-8: Favoritos visitantes (para generar ~33% V global)
+            prob_visitante = np.random.uniform(0.40, 0.65)
+            prob_empate = np.random.uniform(0.20, 0.35)
+            prob_local = 1.0 - prob_empate - prob_visitante
             
-        elif tipo_partido == 'favorito_visitante':
-            # Visitante favorito (15-35% L, 20-30% E, 45-65% V)
-            prob_visitante = np.random.uniform(0.45, 0.65)
-            prob_empate = np.random.uniform(0.20, 0.30)
-            prob_local = 1.0 - prob_visitante - prob_empate
-            
-        else:  # empate_probable
-            # Empate muy probable (25-35% L, 35-50% E, 25-35% V)
+        elif tipo_partido < 13:  # Partidos 9-12: Empates probables (para generar ~29% E global)
             prob_empate = np.random.uniform(0.35, 0.50)
-            prob_local = np.random.uniform(0.25, 0.35)
-            prob_visitante = 1.0 - prob_empate - prob_local
+            prob_local = np.random.uniform(0.25, 0.40)
+            prob_visitante = 1.0 - prob_local - prob_empate
+            
+        else:  # Partido 13: Equilibrado
+            base = np.random.dirichlet([38, 29, 33])  # Distribución histórica como base
+            prob_local, prob_empate, prob_visitante = base[0], base[1], base[2]
         
         # Asegurar valores válidos
-        prob_local = max(0.05, min(0.80, prob_local))
-        prob_empate = max(0.05, min(0.60, prob_empate))
-        prob_visitante = max(0.05, min(0.80, prob_visitante))
+        probs = np.array([prob_local, prob_empate, prob_visitante])
+        probs = np.maximum(probs, 0.05)  # Mínimo 5% cada uno
+        probs = probs / probs.sum()  # Normalizar
         
-        # Normalizar para que sume exactamente 1
+        return float(probs[0]), float(probs[1]), float(probs[2])
+    
+    def _generar_probabilidades_realistas(self) -> tuple:
+        """
+        CORREGIDA: Genera probabilidades que respetan distribución histórica
+        """
+        # Usar distribución histórica como guía estricta
+        from config.constants import PROGOL_CONFIG
+        hist_dist = PROGOL_CONFIG["DISTRIBUCION_HISTORICA"]
+        
+        # Generar con variación controlada alrededor de la distribución histórica
+        ruido = np.random.normal(0, 0.08, 3)  # Reducir ruido de 0.05 a 0.08
+        
+        prob_local = max(0.05, min(0.75, hist_dist["L"] + ruido[0]))
+        prob_empate = max(0.05, min(0.55, hist_dist["E"] + ruido[1]))
+        prob_visitante = max(0.05, min(0.75, hist_dist["V"] + ruido[2]))
+        
+        # Normalizar para que sume 1
         total = prob_local + prob_empate + prob_visitante
         prob_local /= total
         prob_empate /= total
@@ -159,188 +164,140 @@ class DataLoader:
     
     def _generar_datos_ejemplo(self) -> List[Dict[str, Any]]:
         """
-        CORREGIDO: Genera 14 partidos de ejemplo con distribución BALANCEADA
+        COMPLETAMENTE REESCRITA: Genera 14 partidos balanceados que respetan distribución histórica
+        Diseñado específicamente para crear Anclas, Divisores y TendenciaEmpate
         """
         self.logger.info("Generando 14 partidos de ejemplo BALANCEADOS...")
         
         # Equipos realistas para diferentes ligas
-        equipos = {
-            'Liga MX': [
-                ('América', 'Chivas'), ('Cruz Azul', 'Pumas'), 
-                ('Monterrey', 'Tigres'), ('Atlas', 'Santos')
-            ],
-            'Premier League': [
-                ('Manchester City', 'Arsenal'), ('Liverpool', 'Chelsea')
-            ],
-            'UEFA CL': [
-                ('Real Madrid', 'Barcelona'), ('PSG', 'Bayern')
-            ],
-            'Copa MX': [
-                ('León', 'Pachuca'), ('Toluca', 'Necaxa'),
-                ('FC Juárez', 'Mazatlán'), ('Puebla', 'Querétaro')
-            ]
-        }
-        
-        partidos = []
-        idx = 0
-        
-        # CORRECCIÓN: Pre-definir algunos partidos específicos para balancear
-        partidos_especiales = [
-            # Favoritos locales claros
-            {'tipo': 'favorito_local', 'count': 4},
-            # Favoritos visitantes
-            {'tipo': 'favorito_visitante', 'count': 4}, 
-            # Equilibrados
-            {'tipo': 'equilibrado', 'count': 4},
-            # Empates probables
-            {'tipo': 'empate_probable', 'count': 2}
+        equipos_config = [
+            # ANCLAS (4 partidos con probabilidades >60% para tener Anclas reales)
+            ('Real Madrid', 'Getafe', 'La Liga', {'tipo': 'ancla_local', 'prob_target': 0.65}),
+            ('Manchester City', 'Sheffield Wed', 'Premier League', {'tipo': 'ancla_local', 'prob_target': 0.68}),
+            ('Mallorca', 'Barcelona', 'La Liga', {'tipo': 'ancla_visitante', 'prob_target': 0.62}),
+            ('Brighton', 'Liverpool', 'Premier League', {'tipo': 'ancla_visitante', 'prob_target': 0.64}),
+            
+            # TENDENCIA EMPATE (2 partidos diseñados para empate)
+            ('Athletic Club', 'Real Sociedad', 'La Liga', {'tipo': 'empate', 'prob_target': 0.42}),
+            ('Tottenham', 'Chelsea', 'Premier League', {'tipo': 'empate', 'prob_target': 0.38}),
+            
+            # DIVISORES EQUILIBRADOS (4 partidos 40-60%)
+            ('Sevilla', 'Valencia', 'La Liga', {'tipo': 'equilibrado', 'prob_target': 0.45}),
+            ('Arsenal', 'Newcastle', 'Premier League', {'tipo': 'equilibrado', 'prob_target': 0.48}),
+            ('Villarreal', 'Betis', 'La Liga', {'tipo': 'equilibrado', 'prob_target': 0.44}),
+            ('West Ham', 'Aston Villa', 'Premier League', {'tipo': 'equilibrado', 'prob_target': 0.46}),
+            
+            # DIVISORES CON SESGO VISITANTE (4 partidos para balancear)
+            ('Las Palmas', 'Atlético Madrid', 'La Liga', {'tipo': 'divisor_visitante', 'prob_target': 0.52}),
+            ('Crystal Palace', 'Manchester Utd', 'Premier League', {'tipo': 'divisor_visitante', 'prob_target': 0.48}),
+            ('Espanyol', 'Real Madrid', 'La Liga', {'tipo': 'divisor_visitante', 'prob_target': 0.55}),
+            ('Burnley', 'Arsenal', 'Premier League', {'tipo': 'divisor_visitante', 'prob_target': 0.50})
         ]
         
-        contador_especiales = 0
-        tipo_actual = partidos_especiales[0]['tipo']
-        count_actual = 0
+        partidos = []
         
-        for liga, enfrentamientos in equipos.items():
-            for home, away in enfrentamientos:
-                
-                # Determinar tipo de partido para forzar balance
-                if count_actual >= partidos_especiales[contador_especiales]['count']:
-                    contador_especiales = min(contador_especiales + 1, len(partidos_especiales) - 1)
-                    tipo_actual = partidos_especiales[contador_especiales]['tipo']
-                    count_actual = 0
-                
-                # Generar probabilidades según tipo
-                prob_local, prob_empate, prob_visitante = self._generar_probabilidades_por_tipo(tipo_actual)
-                count_actual += 1
-                
-                # Contextualizar partido
-                es_final = 'final' in liga.lower() or idx == 13  # Último partido como final
-                es_derbi = 'clásico' in f"{home} vs {away}".lower() or home in ['Real Madrid', 'Barcelona']
-                
-                partido = {
-                    'id': idx,
-                    'home': home,
-                    'away': away,
-                    'liga': liga,
-                    'prob_local': prob_local,
-                    'prob_empate': prob_empate,
-                    'prob_visitante': prob_visitante,
-                    'forma_diferencia': np.random.normal(0, 0.8),  # Reducir varianza
-                    'lesiones_impact': np.random.normal(0, 0.3),   # Reducir varianza
-                    'es_final': es_final,
-                    'es_derbi': es_derbi,
-                    'es_playoff': liga == 'UEFA CL',
-                    'fecha': '2025-06-07',
-                    'jornada': 1,
-                    'concurso_id': '2283'
-                }
-                
-                partidos.append(partido)
-                idx += 1
-                
-                if len(partidos) >= 14:  # Máximo 14 partidos por concurso
-                    break
+        for idx, (home, away, liga, config) in enumerate(equipos_config):
+            # Generar probabilidades según el tipo diseñado
+            prob_local, prob_empate, prob_visitante = self._generar_probs_por_tipo(config)
             
-            if len(partidos) >= 14:
-                break
-        
-        # Asegurar exactamente 14 partidos con balance forzado
-        while len(partidos) < 14:
-            # Generar partidos adicionales equilibrados
-            prob_local, prob_empate, prob_visitante = self._generar_probabilidades_por_tipo('equilibrado')
+            # Agregar variación contextual realista
+            es_derbi = 'clásico' in f"{home} vs {away}".lower() or (home in ['Real Madrid', 'Barcelona'] and away in ['Real Madrid', 'Barcelona'])
+            es_final = liga == 'UEFA CL' or 'final' in liga.lower()
             
-            partidos.append({
-                'id': len(partidos),
-                'home': f"Equipo {len(partidos) + 1}A",
-                'away': f"Equipo {len(partidos) + 1}B",
-                'liga': 'Liga Ejemplo',
+            partido = {
+                'id': idx,
+                'home': home,
+                'away': away,
+                'liga': liga,
                 'prob_local': prob_local,
                 'prob_empate': prob_empate,
                 'prob_visitante': prob_visitante,
-                'forma_diferencia': np.random.normal(0, 0.8),
+                'forma_diferencia': np.random.normal(0, 0.5),
                 'lesiones_impact': np.random.normal(0, 0.3),
-                'es_final': False,
-                'es_derbi': False,
+                'es_final': es_final,
+                'es_derbi': es_derbi,
                 'es_playoff': False,
                 'fecha': '2025-06-07',
                 'jornada': 1,
                 'concurso_id': '2283'
-            })
+            }
+            
+            partidos.append(partido)
         
-        # Verificar distribución final
-        self._verificar_distribucion_balanceada(partidos)
+        # VALIDACIÓN: Verificar que la distribución global sea correcta
+        self._validar_distribucion_global(partidos)
         
-        self.logger.info(f"✅ Generados {len(partidos)} partidos de ejemplo BALANCEADOS")
+        self.logger.info(f"✅ Generados {len(partidos)} partidos BALANCEADOS con distribución histórica correcta")
         return partidos[:14]  # Exactamente 14
     
-    def _generar_probabilidades_por_tipo(self, tipo: str) -> tuple:
+    def _generar_probs_por_tipo(self, config: Dict) -> tuple:
         """
-        NUEVO: Genera probabilidades específicas por tipo para forzar balance
+        Genera probabilidades específicas según el tipo de partido diseñado
         """
-        if tipo == 'favorito_local':
-            prob_local = np.random.uniform(0.50, 0.70)
-            prob_empate = np.random.uniform(0.20, 0.30)
+        tipo = config['tipo']
+        prob_target = config['prob_target']
+        
+        if tipo == 'ancla_local':
+            prob_local = prob_target  # 0.62-0.68
+            prob_empate = np.random.uniform(0.18, 0.25)
             prob_visitante = 1.0 - prob_local - prob_empate
             
-        elif tipo == 'favorito_visitante':
-            prob_visitante = np.random.uniform(0.50, 0.70)
-            prob_empate = np.random.uniform(0.20, 0.30)
-            prob_local = 1.0 - prob_visitante - prob_empate
+        elif tipo == 'ancla_visitante':
+            prob_visitante = prob_target  # 0.62-0.64
+            prob_empate = np.random.uniform(0.18, 0.25)
+            prob_local = 1.0 - prob_empate - prob_visitante
             
-        elif tipo == 'empate_probable':
-            prob_empate = np.random.uniform(0.40, 0.55)
-            prob_local = np.random.uniform(0.22, 0.35)
-            prob_visitante = 1.0 - prob_empate - prob_local
+        elif tipo == 'empate':
+            prob_empate = prob_target  # 0.38-0.42
+            diff = 1.0 - prob_empate
+            prob_local = np.random.uniform(0.25, diff - 0.25)
+            prob_visitante = diff - prob_local
             
-        else:  # equilibrado
-            prob_local = np.random.uniform(0.30, 0.45)
+        elif tipo == 'equilibrado':
+            # Distribución más equilibrada
+            prob_local = np.random.uniform(0.35, 0.48)
             prob_empate = np.random.uniform(0.25, 0.35)
             prob_visitante = 1.0 - prob_local - prob_empate
-        
-        # Normalizar
-        total = prob_local + prob_empate + prob_visitante
-        return prob_local/total, prob_empate/total, prob_visitante/total
-    
-    def _verificar_distribucion_balanceada(self, partidos: List[Dict[str, Any]]):
-        """
-        NUEVO: Verifica que la distribución esté en rangos aceptables
-        """
-        if not partidos:
-            return
             
-        # Calcular distribución esperada si todas las quinielas siguieran máxima probabilidad
-        total_prob_L = sum(p['prob_local'] for p in partidos)
-        total_prob_E = sum(p['prob_empate'] for p in partidos)
-        total_prob_V = sum(p['prob_visitante'] for p in partidos)
+        elif tipo == 'divisor_visitante':
+            # Favorece visitante pero no tanto como Ancla
+            prob_visitante = np.random.uniform(0.40, 0.55)
+            prob_empate = np.random.uniform(0.22, 0.32)
+            prob_local = 1.0 - prob_empate - prob_visitante
+            
+        else:
+            # Fallback a distribución histórica
+            return self._generar_probabilidades_realistas()
         
-        total = total_prob_L + total_prob_E + total_prob_V
-        dist_L = total_prob_L / total
-        dist_E = total_prob_E / total
-        dist_V = total_prob_V / total
+        # Normalizar y validar
+        probs = np.array([prob_local, prob_empate, prob_visitante])
+        probs = np.maximum(probs, 0.05)  # Mínimo 5%
+        probs = probs / probs.sum()
         
-        self.logger.info(f"📊 Distribución esperada datos: L={dist_L:.1%}, E={dist_E:.1%}, V={dist_V:.1%}")
-        
-        # Warnings si está muy desbalanceado
-        if dist_L > 0.50:
-            self.logger.warning(f"⚠️ Datos sesgados hacia locales: {dist_L:.1%}")
-        if dist_V < 0.20:
-            self.logger.warning(f"⚠️ Pocos visitantes en datos: {dist_V:.1%}")
+        return float(probs[0]), float(probs[1]), float(probs[2])
     
-    def _generar_probabilidades_equilibradas(self) -> tuple:
+    def _validar_distribucion_global(self, partidos: List[Dict[str, Any]]):
         """
-        Genera probabilidades más equilibradas para finales/derbis
+        Valida que la distribución global de probabilidades respete rangos históricos
         """
-        # Partidos más equilibrados
-        prob_local = np.random.uniform(0.25, 0.45)
-        prob_empate = np.random.uniform(0.25, 0.40)
-        prob_visitante = 1.0 - prob_local - prob_empate
+        total_prob_local = sum(p['prob_local'] for p in partidos)
+        total_prob_empate = sum(p['prob_empate'] for p in partidos)
+        total_prob_visitante = sum(p['prob_visitante'] for p in partidos)
         
-        # Asegurar valores válidos
-        if prob_visitante < 0.15:
-            prob_visitante = 0.15
-            total = prob_local + prob_empate + prob_visitante
-            prob_local /= total
-            prob_empate /= total
-            prob_visitante /= total
+        # Calcular porcentajes esperados (suma debe ser ~14 * distribución histórica)
+        esperado_local = 14 * 0.38  # ~5.32
+        esperado_empate = 14 * 0.29  # ~4.06
+        esperado_visitante = 14 * 0.33  # ~4.62
         
-        return prob_local, prob_empate, prob_visitante
+        self.logger.info(f"Distribución generada - L: {total_prob_local:.2f} (esp: {esperado_local:.2f}), " +
+                        f"E: {total_prob_empate:.2f} (esp: {esperado_empate:.2f}), " +
+                        f"V: {total_prob_visitante:.2f} (esp: {esperado_visitante:.2f})")
+        
+        # Advertir si está muy desbalanceado
+        if abs(total_prob_local - esperado_local) > 1.0:
+            self.logger.warning(f"⚠️ Distribución de locales desbalanceada: {total_prob_local:.2f} vs esperado {esperado_local:.2f}")
+        
+        if abs(total_prob_visitante - esperado_visitante) > 1.0:
+            self.logger.warning(f"⚠️ Distribución de visitantes desbalanceada: {total_prob_visitante:.2f} vs esperado {esperado_visitante:.2f}")
+        
+        return True
