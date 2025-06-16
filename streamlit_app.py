@@ -1,7 +1,8 @@
-# streamlit_app.py
+# streamlit_app.py - COMPLETO CORREGIDO
 """
 Interfaz gráfica Streamlit para Progol Optimizer
 Permite cargar datos, ejecutar optimización y ver resultados
+VERSIÓN CORREGIDA con fix del slider de empates
 """
 
 import streamlit as st
@@ -287,10 +288,12 @@ class ProgolStreamlitApp:
         if not es_valido:
             raise ValueError(f"Datos inválidos: {errores}")
 
-        # PASO 2: Clasificación y calibración
+        # PASO 2: Clasificación y calibración - USANDO MÉTODO ACTUALIZADO
+        partidos_calibrados = optimizer.calibrator.calibrar_concurso_completo(datos_partidos)
+
+        # Aplicar clasificación después de calibración
         partidos_clasificados = []
-        for i, partido in enumerate(datos_partidos):
-            partido_calibrado = optimizer.calibrator.aplicar_calibracion_bayesiana(partido)
+        for i, partido_calibrado in enumerate(partidos_calibrados):
             clasificacion = optimizer.classifier.clasificar_partido(partido_calibrado)
 
             partido_final = {
@@ -605,7 +608,7 @@ class ProgolStreamlitApp:
         return fig
 
     def mostrar_tabla_quinielas(self, portafolio):
-        """Mostrar tabla interactiva de quinielas"""
+        """Mostrar tabla interactiva de quinielas - CORREGIDA"""
         st.subheader("🎯 Quinielas Generadas")
 
         # Crear DataFrame
@@ -641,12 +644,22 @@ class ProgolStreamlitApp:
             )
 
         with col_filtro2:
-            rango_empates = st.slider(
-                "Filtrar por número de empates:",
-                min_value=int(df_quinielas["Empates"].min()),
-                max_value=int(df_quinielas["Empates"].max()),
-                value=(int(df_quinielas["Empates"].min()), int(df_quinielas["Empates"].max()))
-            )
+            # CORRECCIÓN CRÍTICA: Verificar si min != max antes de crear slider
+            empates_min = int(df_quinielas["Empates"].min())
+            empates_max = int(df_quinielas["Empates"].max())
+            
+            if empates_min == empates_max:
+                # Si todas las quinielas tienen los mismos empates, mostrar info en lugar de slider
+                st.info(f"📊 Todas las quinielas tienen {empates_min} empates")
+                rango_empates = (empates_min, empates_max)
+            else:
+                # Solo crear slider si hay rango válido
+                rango_empates = st.slider(
+                    "Filtrar por número de empates:",
+                    min_value=empates_min,
+                    max_value=empates_max,
+                    value=(empates_min, empates_max)
+                )
 
         # Aplicar filtros
         df_filtrado = df_quinielas[
