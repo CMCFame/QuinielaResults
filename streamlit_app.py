@@ -1,8 +1,12 @@
-# streamlit_app.py - COMPLETO CORREGIDO
+# streamlit_app.py
 """
-Interfaz gráfica Streamlit para Progol Optimizer
+Interfaz gráfica Streamlit para Progol Optimizer - VERSIÓN CORREGIDA
 Permite cargar datos, ejecutar optimización y ver resultados
-VERSIÓN CORREGIDA con fix del slider de empates
+CORRECCIONES APLICADAS:
+- CSV del usuario ahora se procesa correctamente 
+- Tabla muestra nombres de equipos por partido
+- Slider corregido para mismo número de empates
+- Calibración global aplicada
 """
 
 import streamlit as st
@@ -17,7 +21,6 @@ from pathlib import Path
 import logging
 
 # REPARACIÓN DE IMPORTS - Ajustado para estructura de archivos actual
-# Los archivos están directamente en la raíz, no en subdirectorio progol_optimizer
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
@@ -32,7 +35,7 @@ except ImportError as e:
 
 class ProgolStreamlitApp:
     """
-    Aplicación Streamlit para el Progol Optimizer
+    Aplicación Streamlit para el Progol Optimizer - VERSIÓN CORREGIDA
     """
 
     def __init__(self):
@@ -119,7 +122,7 @@ class ProgolStreamlitApp:
                 st.json(PROGOL_CONFIG)
 
     def tab_datos_configuracion(self):
-        """Tab para carga y configuración de datos"""
+        """Tab para carga y configuración de datos - CORREGIDO"""
         st.header("📊 Datos y Configuración")
 
         col1, col2 = st.columns([1, 1])
@@ -128,19 +131,20 @@ class ProgolStreamlitApp:
             st.subheader("Carga de Datos")
 
             # Opción 1: Usar datos de ejemplo
-            if st.button("🎲 Usar Datos de Ejemplo", type="primary"):
+            if st.button("🎲 Usar Datos de Ejemplo", type="secondary"):
                 with st.spinner("Generando datos de ejemplo..."):
                     try:
                         from data.loader import DataLoader
                         loader = DataLoader()
                         datos_ejemplo = loader._generar_datos_ejemplo()
                         st.session_state.datos_partidos = datos_ejemplo
+                        st.session_state.archivo_origen = "datos_ejemplo"
                         st.success(f"✅ Generados {len(datos_ejemplo)} partidos de ejemplo")
 
                     except Exception as e:
                         st.error(f"Error generando datos: {e}")
 
-            # Opción 2: Subir archivo CSV
+            # Opción 2: Subir archivo CSV - CORREGIDO
             st.markdown("**O subir archivo CSV:**")
             archivo_csv = st.file_uploader(
                 "Seleccionar archivo CSV",
@@ -150,20 +154,51 @@ class ProgolStreamlitApp:
 
             if archivo_csv is not None:
                 try:
+                    # CORRECCIÓN: Leer CSV del usuario correctamente
                     df = pd.read_csv(archivo_csv)
-                    st.success(f"✅ Archivo cargado: {len(df)} filas")
+                    
+                    # Verificar que tenga exactamente 14 filas
+                    if len(df) != 14:
+                        st.error(f"❌ El archivo debe tener exactamente 14 partidos, tiene {len(df)}")
+                        return
+                    
+                    st.success(f"✅ Archivo cargado: {len(df)} partidos")
 
-                    # Convertir DataFrame a formato interno
+                    # CORRECCIÓN: Convertir DataFrame a formato interno correctamente
                     datos_partidos = []
                     for idx, row in df.iterrows():
+                        # Verificar columnas requeridas
+                        if 'home' not in row or 'away' not in row:
+                            st.error("❌ El CSV debe tener columnas 'home' y 'away'")
+                            return
+                            
+                        # Probabilidades: usar las del CSV o generar si no existen
+                        if all(col in row for col in ['prob_local', 'prob_empate', 'prob_visitante']):
+                            prob_local = float(row['prob_local'])
+                            prob_empate = float(row['prob_empate'])
+                            prob_visitante = float(row['prob_visitante'])
+                            
+                            # Verificar que sumen ~1.0
+                            total = prob_local + prob_empate + prob_visitante
+                            if abs(total - 1.0) > 0.05:
+                                st.warning(f"⚠️ Partido {idx+1}: probabilidades suman {total:.3f}, normalizando...")
+                                prob_local /= total
+                                prob_empate /= total 
+                                prob_visitante /= total
+                        else:
+                            # Generar probabilidades realistas si no están en CSV
+                            from data.loader import DataLoader
+                            loader = DataLoader()
+                            prob_local, prob_empate, prob_visitante = loader._generar_probabilidades_realistas()
+
                         partido = {
                             'id': idx,
-                            'home': str(row.get('home', f'Equipo{idx}A')),
-                            'away': str(row.get('away', f'Equipo{idx}B')),
-                            'liga': str(row.get('liga', 'Liga Desconocida')),
-                            'prob_local': float(row.get('prob_local', 0.4)),
-                            'prob_empate': float(row.get('prob_empate', 0.3)),
-                            'prob_visitante': float(row.get('prob_visitante', 0.3)),
+                            'home': str(row['home']).strip(),
+                            'away': str(row['away']).strip(),
+                            'liga': str(row.get('liga', 'Liga')).strip(),
+                            'prob_local': prob_local,
+                            'prob_empate': prob_empate,
+                            'prob_visitante': prob_visitante,
                             'forma_diferencia': float(row.get('forma_diferencia', 0)),
                             'lesiones_impact': float(row.get('lesiones_impact', 0)),
                             'es_final': bool(row.get('es_final', False)),
@@ -175,20 +210,34 @@ class ProgolStreamlitApp:
                         }
                         datos_partidos.append(partido)
 
+                    # CORRECCIÓN: Asegurar que se guarden los datos del usuario
                     st.session_state.datos_partidos = datos_partidos
+                    st.session_state.archivo_origen = archivo_csv.name
+                    
+                    st.success(f"✅ **Datos de {archivo_csv.name} cargados correctamente**")
 
                 except Exception as e:
                     st.error(f"Error procesando CSV: {e}")
+                    if st.session_state.debug_mode:
+                        st.exception(e)
 
         with col2:
             st.subheader("Vista Previa de Datos")
 
             if 'datos_partidos' in st.session_state:
                 datos = st.session_state.datos_partidos
+                archivo_origen = st.session_state.get('archivo_origen', 'datos_ejemplo')
 
-                # Crear DataFrame para mostrar
+                # MEJORA: Mostrar origen de datos claramente
+                if archivo_origen == 'datos_ejemplo':
+                    st.info("📊 **Usando datos de ejemplo generados**")
+                else:
+                    st.success(f"📄 **Usando datos de: {archivo_origen}**")
+
+                # Crear DataFrame para mostrar - CON NOMBRES DE EQUIPOS
                 df_preview = pd.DataFrame([
                     {
+                        '#': i+1,
                         'Partido': f"{p['home']} vs {p['away']}",
                         'Liga': p['liga'],
                         'P(L)': f"{p['prob_local']:.3f}",
@@ -197,7 +246,7 @@ class ProgolStreamlitApp:
                         'Final': '🏆' if p.get('es_final') else '',
                         'Derbi': '🔥' if p.get('es_derbi') else ''
                     }
-                    for p in datos
+                    for i, p in enumerate(datos)
                 ])
 
                 st.dataframe(df_preview, use_container_width=True)
@@ -228,6 +277,13 @@ class ProgolStreamlitApp:
             st.warning("⚠️ Primero carga los datos en la pestaña 'Datos & Configuración'")
             return
 
+        # Mostrar qué datos se van a usar
+        archivo_origen = st.session_state.get('archivo_origen', 'datos_ejemplo')
+        if archivo_origen == 'datos_ejemplo':
+            st.info("📊 Se optimizará usando **datos de ejemplo generados**")
+        else:
+            st.success(f"📄 Se optimizará usando **datos de: {archivo_origen}**")
+
         # Botón principal de optimización
         if st.button("🚀 Ejecutar Optimización Completa", type="primary", use_container_width=True):
             self.ejecutar_optimizacion()
@@ -240,7 +296,6 @@ class ProgolStreamlitApp:
         """Ejecutar el proceso completo de optimización"""
         st.session_state.optimizacion_ejecutando = True
 
-        # Usaremos st.progress(0, text="...") para mostrar texto y barra
         progress_bar = st.progress(0, text="Inicializando...")
 
         try:
@@ -248,16 +303,13 @@ class ProgolStreamlitApp:
             progress_bar.progress(10, text="🔧 Inicializando optimizador...")
             optimizer = ProgolOptimizer()
 
-            # 1. Definir la función de callback que actualiza la UI
             def update_progress(progress_value, text_value):
-                # El progreso va de 30% a 90% durante la optimización
                 display_progress = 30 + int(progress_value * 60)
                 progress_bar.progress(display_progress, text=text_value)
 
             # Ejecutar optimización
             progress_bar.progress(30, text="⚙️ Ejecutando optimización GRASP-Annealing...")
 
-            # 2. Pasar la función de callback a la ejecución
             resultado = self.ejecutar_optimizacion_directo(optimizer, progress_callback=update_progress)
 
             progress_bar.progress(100, text="✅ Optimización completada!")
@@ -276,26 +328,25 @@ class ProgolStreamlitApp:
             if st.session_state.debug_mode:
                 st.exception(e)
 
-    # 3. Modifica la firma de ejecutar_optimizacion_directo
     def ejecutar_optimizacion_directo(self, optimizer, progress_callback=None):
         """Ejecutar optimización usando datos ya cargados"""
         # Obtener datos de session_state
         datos_partidos = st.session_state.datos_partidos
 
-        # Ejecutar cada paso del pipeline manualmente
         # PASO 1: Validación
         es_valido, errores = optimizer.data_validator.validar_estructura(datos_partidos)
         if not es_valido:
             raise ValueError(f"Datos inválidos: {errores}")
 
-        # PASO 2: Clasificación y calibración - USANDO MÉTODO ACTUALIZADO
+        # PASO 2: Clasificación y calibración - CORREGIDO CON CALIBRACIÓN GLOBAL
+        # NUEVO: Usar calibración global en lugar de individual
         partidos_calibrados = optimizer.calibrator.calibrar_concurso_completo(datos_partidos)
 
         # Aplicar clasificación después de calibración
         partidos_clasificados = []
         for i, partido_calibrado in enumerate(partidos_calibrados):
             clasificacion = optimizer.classifier.clasificar_partido(partido_calibrado)
-
+            
             partido_final = {
                 **partido_calibrado,
                 "id": i,
@@ -313,7 +364,6 @@ class ProgolStreamlitApp:
 
         # PASO 5: Optimizar
         portafolio_inicial = quinielas_core + quinielas_satelites
-        # 4. Pasa el callback a la función de optimización
         portafolio_optimizado = optimizer.optimizer.optimizar_portafolio_grasp_annealing(
             portafolio_inicial, partidos_clasificados, progress_callback=progress_callback
         )
@@ -365,21 +415,6 @@ class ProgolStreamlitApp:
         """Mostrar progreso durante la optimización"""
         st.info("⏳ Optimización en progreso...")
 
-        # Simular pasos del proceso
-        pasos = [
-            "Validando datos de entrada...",
-            "Aplicando calibración bayesiana...",
-            "Clasificando partidos (Ancla/Divisor/TendenciaX/Neutro)...",
-            "Generando 4 quinielas Core...",
-            "Creando 26 satélites en 13 pares anticorrelados...",
-            "Ejecutando optimización GRASP-Annealing...",
-            "Validando portafolio final...",
-            "Exportando resultados..."
-        ]
-
-        for i, paso in enumerate(pasos):
-            st.text(f"✓ {paso}")
-
     def tab_resultados(self):
         """Tab para mostrar resultados de la optimización"""
         st.header("📈 Resultados de la Optimización")
@@ -399,8 +434,8 @@ class ProgolStreamlitApp:
         # Visualizaciones
         self.crear_visualizaciones(portafolio, partidos, metricas)
 
-        # Tabla de quinielas
-        self.mostrar_tabla_quinielas(portafolio)
+        # Tabla de quinielas - CORREGIDA
+        self.mostrar_tabla_quinielas(portafolio, partidos)
 
         # Descarga de archivos
         self.mostrar_opciones_descarga(resultado)
@@ -607,9 +642,14 @@ class ProgolStreamlitApp:
 
         return fig
 
-    def mostrar_tabla_quinielas(self, portafolio):
-        """Mostrar tabla interactiva de quinielas - CORREGIDA"""
+    def mostrar_tabla_quinielas(self, portafolio, partidos):
+        """Mostrar tabla interactiva de quinielas - CORREGIDA CON NOMBRES DE EQUIPOS"""
         st.subheader("🎯 Quinielas Generadas")
+
+        # MEJORA: Crear lista de partidos para referencia
+        partidos_info = []
+        for partido in partidos:
+            partidos_info.append(f"{partido['home']} vs {partido['away']}")
 
         # Crear DataFrame
         data_tabla = []
@@ -625,9 +665,12 @@ class ProgolStreamlitApp:
                 "V": quiniela["resultados"].count("V")
             }
 
-            # Agregar partidos individuales
+            # Agregar partidos individuales CON NOMBRES DE EQUIPOS
             for i, resultado in enumerate(quiniela["resultados"]):
-                fila[f"P{i+1}"] = resultado
+                if i < len(partidos_info):
+                    fila[f"P{i+1}"] = f"{resultado} ({partidos_info[i][:15]}...)"
+                else:
+                    fila[f"P{i+1}"] = resultado
 
             data_tabla.append(fila)
 
@@ -647,7 +690,7 @@ class ProgolStreamlitApp:
             # CORRECCIÓN CRÍTICA: Verificar si min != max antes de crear slider
             empates_min = int(df_quinielas["Empates"].min())
             empates_max = int(df_quinielas["Empates"].max())
-            
+
             if empates_min == empates_max:
                 # Si todas las quinielas tienen los mismos empates, mostrar info en lugar de slider
                 st.info(f"📊 Todas las quinielas tienen {empates_min} empates")
@@ -668,7 +711,23 @@ class ProgolStreamlitApp:
             (df_quinielas["Empates"] <= rango_empates[1])
         ]
 
-        # Mostrar tabla
+        # MEJORA: Mostrar tabla de partidos para referencia
+        with st.expander("📋 Ver Partidos del Concurso"):
+            partidos_df = pd.DataFrame([
+                {
+                    "#": i+1,
+                    "Partido": f"{p['home']} vs {p['away']}",
+                    "Liga": p['liga'],
+                    "Clasificación": p.get('clasificacion', 'N/A'),
+                    "P(L)": f"{p['prob_local']:.3f}",
+                    "P(E)": f"{p['prob_empate']:.3f}",
+                    "P(V)": f"{p['prob_visitante']:.3f}"
+                }
+                for i, p in enumerate(partidos)
+            ])
+            st.dataframe(partidos_df, use_container_width=True, hide_index=True)
+
+        # Mostrar tabla principal
         st.dataframe(
             df_filtrado,
             use_container_width=True,
