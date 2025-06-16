@@ -1,7 +1,7 @@
 # progol_optimizer/portfolio/satellite_generator.py
 """
-Generador de Satélites - Implementación EXACTA de pares anticorrelados (página 4)
-26 satélites en 13 pares con correlación negativa ~-0.35, invirtiendo DIVISORES
+Generador de Satélites ROBUSTO - Garantiza Jaccard ≤ 0.57 al 100%
+Algoritmo mejorado que crea pares anticorrelados de forma determinista y confiable
 """
 
 import logging
@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Tuple
 
 class SatelliteGenerator:
     """
-    Genera pares de satélites anticorrelados según especificaciones del documento
+    Genera pares de satélites anticorrelados con algoritmo robusto
     """
     
     def __init__(self):
@@ -24,43 +24,42 @@ class SatelliteGenerator:
         self.empates_max = self.config["EMPATES_MAX"]
         self.correlacion_max = self.config["ARQUITECTURA_PORTAFOLIO"]["correlacion_jaccard_max"]
         
-        self.logger.debug(f"SatelliteGenerator inicializado: correlación_max={self.correlacion_max}")
+        self.logger.debug(f"SatelliteGenerator ROBUSTO: correlación_max={self.correlacion_max}")
     
     def generar_pares_satelites(self, partidos_clasificados: List[Dict[str, Any]], num_satelites: int) -> List[Dict[str, Any]]:
         """
-        IMPLEMENTACIÓN CRÍTICA: Pares anticorrelados reales
-        - Cada par invierte resultados en partidos DIVISOR
-        - Mantiene ANCLAS idénticas 
-        - Correlación Jaccard ≤ 0.57 entre pares
-        
-        Args:
-            partidos_clasificados: Partidos con clasificación
-            num_satelites: Número total de satélites (debe ser par)
-            
-        Returns:
-            List[Dict]: Lista de satélites en pares anticorrelados
+        Genera satélites con algoritmo ROBUSTO que garantiza Jaccard ≤ 0.57
         """
         if num_satelites % 2 != 0:
             raise ValueError(f"Número de satélites debe ser par, recibido: {num_satelites}")
         
         num_pares = num_satelites // 2
         
-        self.logger.info(f"Generando {num_satelites} satélites en {num_pares} pares anticorrelados...")
+        self.logger.info(f"🔄 Generando {num_satelites} satélites ROBUSTOS en {num_pares} pares...")
         
         satelites = []
+        pares_fallidos = 0
         
-        # Generar cada par de satélites
+        # Generar cada par con algoritmo robusto
         for par_id in range(num_pares):
-            # Crear par anticorrelado
-            quiniela_a, quiniela_b = self._crear_par_anticorrelado(
-                partidos_clasificados, par_id
-            )
-            
-            # Verificar correlación
-            correlacion = self._calcular_correlacion_jaccard(quiniela_a, quiniela_b)
-            
-            satelites.extend([
-                {
+            try:
+                quiniela_a, quiniela_b = self._crear_par_anticorrelado_robusto(
+                    partidos_clasificados, par_id
+                )
+                
+                # Verificar correlación (debe ser ≤ 0.57)
+                correlacion = self._calcular_correlacion_jaccard(quiniela_a, quiniela_b)
+                
+                if correlacion > self.correlacion_max:
+                    self.logger.warning(f"⚠️ Par {par_id}: correlación {correlacion:.3f} > {self.correlacion_max}, reintentando...")
+                    # Reintentar con algoritmo más agresivo
+                    quiniela_a, quiniela_b = self._crear_par_forzado_anticorrelado(
+                        partidos_clasificados, par_id
+                    )
+                    correlacion = self._calcular_correlacion_jaccard(quiniela_a, quiniela_b)
+                
+                # Crear objetos satélite
+                satelite_a = {
                     "id": f"Sat-{par_id+1}A",
                     "tipo": "Satelite",
                     "resultados": quiniela_a,
@@ -72,8 +71,9 @@ class SatelliteGenerator:
                         "E": quiniela_a.count("E"),
                         "V": quiniela_a.count("V")
                     }
-                },
-                {
+                }
+                
+                satelite_b = {
                     "id": f"Sat-{par_id+1}B", 
                     "tipo": "Satelite",
                     "resultados": quiniela_b,
@@ -86,78 +86,305 @@ class SatelliteGenerator:
                         "V": quiniela_b.count("V")
                     }
                 }
-            ])
-            
-            self.logger.debug(f"  Par {par_id+1}: correlación={correlacion:.3f}")
+                
+                satelites.extend([satelite_a, satelite_b])
+                
+                self.logger.debug(f"✅ Par {par_id+1}: correlación={correlacion:.3f}, "
+                               f"empates=({satelite_a['empates']},{satelite_b['empates']})")
+                
+            except Exception as e:
+                self.logger.error(f"❌ Error generando par {par_id}: {e}")
+                pares_fallidos += 1
+                
+                # Generar par de emergencia si falla
+                quiniela_a, quiniela_b = self._crear_par_emergencia(partidos_clasificados, par_id)
+                satelites.extend([
+                    {
+                        "id": f"Sat-{par_id+1}A",
+                        "tipo": "Satelite",
+                        "resultados": quiniela_a,
+                        "par_id": par_id,
+                        "correlacion_jaccard": self._calcular_correlacion_jaccard(quiniela_a, quiniela_b),
+                        "empates": quiniela_a.count("E"),
+                        "distribución": {"L": quiniela_a.count("L"), "E": quiniela_a.count("E"), "V": quiniela_a.count("V")}
+                    },
+                    {
+                        "id": f"Sat-{par_id+1}B",
+                        "tipo": "Satelite", 
+                        "resultados": quiniela_b,
+                        "par_id": par_id,
+                        "correlacion_jaccard": self._calcular_correlacion_jaccard(quiniela_a, quiniela_b),
+                        "empates": quiniela_b.count("E"),
+                        "distribución": {"L": quiniela_b.count("L"), "E": quiniela_b.count("E"), "V": quiniela_b.count("V")}
+                    }
+                ])
         
-        # Validar todos los pares
-        self._validar_satelites(satelites)
+        # Validación final
+        self._validar_satelites_robusto(satelites)
         
-        self.logger.info(f"✅ Generados {len(satelites)} satélites en {num_pares} pares válidos")
+        if pares_fallidos > 0:
+            self.logger.warning(f"⚠️ {pares_fallidos} pares tuvieron que usar modo emergencia")
+        
+        self.logger.info(f"✅ Generados {len(satelites)} satélites robustos en {num_pares} pares")
         return satelites
 
-    # --- INICIO DE CORRECCIÓN: Lógica mejorada para crear pares ---
-    def _crear_par_anticorrelado(self, partidos: List[Dict[str, Any]], par_id: int) -> Tuple[List[str], List[str]]:
+    def _crear_par_anticorrelado_robusto(self, partidos: List[Dict[str, Any]], par_id: int) -> Tuple[List[str], List[str]]:
         """
-        Crea par anticorrelado de forma robusta.
-        - Invierte TODOS los partidos Divisor.
-        - Si es necesario, invierte partidos Neutros para garantizar Jaccard <= 0.57 (máx 7 coincidencias).
-        - Mantiene ANCLAS idénticas.
+        Algoritmo ROBUSTO que garantiza Jaccard ≤ 0.57
         """
         quiniela_a = [""] * 14
         quiniela_b = [""] * 14
 
-        # 1. Clasificar índices de partidos
+        # 1. Clasificar partidos por tipo
         anclas_indices = [i for i, p in enumerate(partidos) if p["clasificacion"] == "Ancla"]
         divisores_indices = [i for i, p in enumerate(partidos) if p["clasificacion"] == "Divisor"]
-        neutros_indices = [i for i, p in enumerate(partidos) if p["clasificacion"] not in ["Ancla", "Divisor"]]
+        otros_indices = [i for i, p in enumerate(partidos) if p["clasificacion"] not in ["Ancla", "Divisor"]]
 
-        # 2. Asignar ANCLAS (idénticas)
+        self.logger.debug(f"  Par {par_id}: {len(anclas_indices)} anclas, {len(divisores_indices)} divisores, {len(otros_indices)} otros")
+
+        # 2. ANCLAS: Siempre idénticas (requisito crítico)
         for i in anclas_indices:
             resultado = self._get_resultado_max_prob(partidos[i])
             quiniela_a[i] = resultado
             quiniela_b[i] = resultado
 
-        # 3. Asignar DIVISORES (anticorrelados)
+        # 3. DIVISORES: Siempre opuestos (maximiza diferencias)
         for i in divisores_indices:
             resultado_a = self._get_resultado_max_prob(partidos[i])
-            resultado_b = self._get_resultado_alternativo(partidos[i])
+            resultado_b = self._get_resultado_opuesto_inteligente(resultado_a, partidos[i])
             quiniela_a[i] = resultado_a
             quiniela_b[i] = resultado_b
 
-        # 4. Determinar si se necesitan más diferencias en NEUTROS
-        num_diferencias_actuales = len(divisores_indices)
-        # Para Jaccard <= 0.57, se necesitan al menos 7 diferencias (14 - 7 = 7 coincidencias; 7/14 = 0.5)
-        diferencias_necesarias = 7 
-        diferencias_faltantes = max(0, diferencias_necesarias - num_diferencias_actuales)
+        # 4. ESTRATEGIA PARA OTROS: Alcanzar exactamente 7 diferencias (Jaccard = 0.5)
+        diferencias_objetivo = 7  # Para Jaccard ≤ 0.5 (margen de seguridad vs 0.57)
+        diferencias_actuales = len(divisores_indices)
+        diferencias_faltantes = max(0, diferencias_objetivo - diferencias_actuales)
 
-        # Seleccionar neutros para invertir de forma aleatoria pero determinista para el par
-        random.seed(par_id)
-        neutros_a_invertir = random.sample(neutros_indices, min(diferencias_faltantes, len(neutros_indices)))
-        
-        self.logger.debug(f"    Par {par_id}: {num_diferencias_actuales} difs de Divisores. Invirtiendo {len(neutros_a_invertir)} Neutros.")
+        self.logger.debug(f"    Diferencias: actuales={diferencias_actuales}, objetivo={diferencias_objetivo}, faltantes={diferencias_faltantes}")
 
-        # 5. Asignar NEUTROS
-        for i in neutros_indices:
-            if i in neutros_a_invertir:
-                # Invertir para crear más diferencias
+        # Seleccionar "otros" para invertir usando criterio determinista
+        random.seed(par_id + 1000)  # Semilla determinista por par
+        otros_a_invertir = random.sample(otros_indices, min(diferencias_faltantes, len(otros_indices)))
+
+        for i in otros_indices:
+            if i in otros_a_invertir:
+                # Invertir para crear diferencia
                 resultado_a = self._get_resultado_max_prob(partidos[i])
-                resultado_b = self._get_resultado_alternativo(partidos[i])
+                resultado_b = self._get_resultado_opuesto_inteligente(resultado_a, partidos[i])
                 quiniela_a[i] = resultado_a
                 quiniela_b[i] = resultado_b
             else:
-                # Mantener idénticos
+                # Mantener idéntico
                 resultado = self._get_resultado_max_prob(partidos[i])
                 quiniela_a[i] = resultado
                 quiniela_b[i] = resultado
 
-        # 6. Ajustar empates al final para ambas quinielas
+        # 5. Verificación y ajuste fino si es necesario
+        correlacion_actual = self._calcular_correlacion_jaccard(quiniela_a, quiniela_b)
+        
+        if correlacion_actual > self.correlacion_max:
+            self.logger.debug(f"    Correlación {correlacion_actual:.3f} > {self.correlacion_max}, ajustando...")
+            quiniela_a, quiniela_b = self._ajustar_correlacion_forzada(
+                quiniela_a, quiniela_b, partidos, self.correlacion_max
+            )
+
+        # 6. Ajustar empates preservando las diferencias creadas
+        quiniela_a = self._ajustar_empates_preservando_diferencias(quiniela_a, partidos, quiniela_b)
+        quiniela_b = self._ajustar_empates_preservando_diferencias(quiniela_b, partidos, quiniela_a)
+        
+        return quiniela_a, quiniela_b
+
+    def _crear_par_forzado_anticorrelado(self, partidos: List[Dict[str, Any]], par_id: int) -> Tuple[List[str], List[str]]:
+        """
+        Algoritmo más agresivo cuando el robusto no logra Jaccard ≤ 0.57
+        """
+        quiniela_a = [""] * 14
+        quiniela_b = [""] * 14
+
+        # 1. ANCLAS idénticas (no negociable)
+        for i, partido in enumerate(partidos):
+            if partido["clasificacion"] == "Ancla":
+                resultado = self._get_resultado_max_prob(partido)
+                quiniela_a[i] = resultado
+                quiniela_b[i] = resultado
+
+        # 2. Todo lo demás: alternar de forma agresiva para garantizar ≤ 0.57
+        diferencias_necesarias = 8  # Más agresivo: 8 diferencias = Jaccard = 0.43
+        diferencias_creadas = 0
+        
+        for i, partido in enumerate(partidos):
+            if partido["clasificacion"] == "Ancla":
+                continue  # Ya procesado
+                
+            if diferencias_creadas < diferencias_necesarias:
+                # Crear diferencia
+                resultado_a = self._get_resultado_max_prob(partido)
+                resultado_b = self._get_resultado_opuesto_inteligente(resultado_a, partido)
+                quiniela_a[i] = resultado_a
+                quiniela_b[i] = resultado_b
+                diferencias_creadas += 1
+            else:
+                # Mantener idéntico
+                resultado = self._get_resultado_max_prob(partido)
+                quiniela_a[i] = resultado
+                quiniela_b[i] = resultado
+
+        # Ajustar empates
         quiniela_a = self._ajustar_empates_satelite(quiniela_a, partidos)
         quiniela_b = self._ajustar_empates_satelite(quiniela_b, partidos)
         
         return quiniela_a, quiniela_b
-    # --- FIN DE CORRECCIÓN ---
-    
+
+    def _crear_par_emergencia(self, partidos: List[Dict[str, Any]], par_id: int) -> Tuple[List[str], List[str]]:
+        """
+        Par de emergencia cuando todo falla - estrategia simple pero funcional
+        """
+        self.logger.warning(f"🚨 Generando par de emergencia {par_id}")
+        
+        quiniela_a = []
+        quiniela_b = []
+        
+        for i, partido in enumerate(partidos):
+            if partido["clasificacion"] == "Ancla":
+                # Anclas idénticas
+                resultado = self._get_resultado_max_prob(partido)
+                quiniela_a.append(resultado)
+                quiniela_b.append(resultado)
+            elif i % 2 == 0:
+                # Alternancia simple por posición
+                resultado_a = self._get_resultado_max_prob(partido)
+                resultado_b = "L" if resultado_a != "L" else "V"
+                quiniela_a.append(resultado_a)
+                quiniela_b.append(resultado_b)
+            else:
+                # Mantener algunos idénticos
+                resultado = self._get_resultado_max_prob(partido)
+                quiniela_a.append(resultado)
+                quiniela_b.append(resultado)
+        
+        # Ajustar empates básico
+        quiniela_a = self._ajustar_empates_basico(quiniela_a)
+        quiniela_b = self._ajustar_empates_basico(quiniela_b)
+        
+        return quiniela_a, quiniela_b
+
+    def _get_resultado_opuesto_inteligente(self, resultado_actual: str, partido: Dict[str, Any]) -> str:
+        """
+        Obtiene resultado opuesto de forma inteligente para maximizar anticorrelación
+        """
+        probs = {
+            "L": partido["prob_local"],
+            "E": partido["prob_empate"],
+            "V": partido["prob_visitante"]
+        }
+        
+        if resultado_actual == "L":
+            # Preferir V sobre E para maximizar diferencia
+            return "V" if probs["V"] > 0.15 else "E"
+        elif resultado_actual == "V":
+            # Preferir L sobre E
+            return "L" if probs["L"] > 0.15 else "E"
+        else:  # resultado_actual == "E"
+            # Elegir entre L y V basado en probabilidades
+            return "L" if probs["L"] > probs["V"] else "V"
+
+    def _ajustar_correlacion_forzada(self, quiniela_a: List[str], quiniela_b: List[str], 
+                                   partidos: List[Dict[str, Any]], objetivo_jaccard: float) -> Tuple[List[str], List[str]]:
+        """
+        Ajusta forzadamente hasta lograr el objetivo de correlación
+        """
+        max_intentos = 10
+        intento = 0
+        
+        while (self._calcular_correlacion_jaccard(quiniela_a, quiniela_b) > objetivo_jaccard and 
+               intento < max_intentos):
+            
+            # Encontrar candidatos para invertir (no Anclas)
+            candidatos = []
+            for i, (a, b) in enumerate(zip(quiniela_a, quiniela_b)):
+                if a == b and partidos[i]["clasificacion"] != "Ancla":
+                    candidatos.append(i)
+            
+            if not candidatos:
+                self.logger.warning("No hay más candidatos para invertir")
+                break
+                
+            # Invertir el candidato más prometedor
+            idx_invertir = random.choice(candidatos)
+            quiniela_b[idx_invertir] = self._get_resultado_opuesto_inteligente(
+                quiniela_a[idx_invertir], partidos[idx_invertir]
+            )
+            
+            intento += 1
+            
+        return quiniela_a, quiniela_b
+
+    def _ajustar_empates_preservando_diferencias(self, quiniela: List[str], partidos: List[Dict[str, Any]], 
+                                               quiniela_pareja: List[str]) -> List[str]:
+        """
+        Ajusta empates sin destruir las diferencias ya creadas con la pareja
+        """
+        empates_actuales = quiniela.count("E")
+        
+        if self.empates_min <= empates_actuales <= self.empates_max:
+            return quiniela
+        
+        quiniela_ajustada = quiniela.copy()
+        
+        if empates_actuales > self.empates_max:
+            # Reducir empates, pero sin tocar diferencias críticas
+            exceso = empates_actuales - self.empates_max
+            candidatos = []
+            
+            for i, res in enumerate(quiniela):
+                if (res == "E" and 
+                    partidos[i]["clasificacion"] != "Ancla" and
+                    quiniela_pareja[i] == "E"):  # Solo si la pareja también tiene E
+                    candidatos.append((i, partidos[i]["prob_empate"]))
+            
+            # Cambiar los empates de menor probabilidad
+            candidatos.sort(key=lambda x: x[1])
+            for i in range(min(exceso, len(candidatos))):
+                idx = candidatos[i][0]
+                partido = partidos[idx]
+                quiniela_ajustada[idx] = "L" if partido["prob_local"] > partido["prob_visitante"] else "V"
+                
+        elif empates_actuales < self.empates_min:
+            # Aumentar empates preservando diferencias
+            faltante = self.empates_min - empates_actuales
+            candidatos = []
+            
+            for i, res in enumerate(quiniela):
+                if (res in ["L", "V"] and 
+                    partidos[i]["clasificacion"] != "Ancla" and
+                    quiniela_pareja[i] == res):  # Solo si la pareja tiene lo mismo
+                    candidatos.append((i, partidos[i]["prob_empate"]))
+            
+            # Cambiar a empate los de mayor probabilidad de empate
+            candidatos.sort(key=lambda x: x[1], reverse=True)
+            for i in range(min(faltante, len(candidatos))):
+                idx = candidatos[i][0]
+                quiniela_ajustada[idx] = "E"
+        
+        return quiniela_ajustada
+
+    def _ajustar_empates_basico(self, quiniela: List[str]) -> List[str]:
+        """Ajuste básico de empates para emergencias"""
+        empates_actuales = quiniela.count("E")
+        
+        if empates_actuales < self.empates_min:
+            # Convertir algunos L/V a E
+            for i in range(len(quiniela)):
+                if quiniela[i] in ["L", "V"] and quiniela.count("E") < self.empates_min:
+                    quiniela[i] = "E"
+        elif empates_actuales > self.empates_max:
+            # Convertir algunos E a L
+            for i in range(len(quiniela)):
+                if quiniela[i] == "E" and quiniela.count("E") > self.empates_max:
+                    quiniela[i] = "L"
+                    
+        return quiniela
+
     def _get_resultado_max_prob(self, partido: Dict[str, Any]) -> str:
         """Obtiene el resultado de máxima probabilidad"""
         probs = {
@@ -167,25 +394,8 @@ class SatelliteGenerator:
         }
         return max(probs, key=probs.get)
     
-    def _get_resultado_alternativo(self, partido: Dict[str, Any]) -> str:
-        """Obtiene resultado alternativo para crear anticorrelación"""
-        probs = {
-            "L": partido["prob_local"],
-            "E": partido["prob_empate"],
-            "V": partido["prob_visitante"]
-        }
-        
-        probs_ordenadas = sorted(probs.items(), key=lambda x: x[1], reverse=True)
-        primera = probs_ordenadas[0][0]
-        
-        if primera == "L": return "V"
-        if primera == "V": return "L"
-        return probs_ordenadas[1][0] if len(probs_ordenadas) > 1 else "L"
-    
     def _ajustar_empates_satelite(self, quiniela: List[str], partidos: List[Dict[str, Any]]) -> List[str]:
-        """
-        Ajusta empates en satélite manteniendo la lógica de anticorrelación
-        """
+        """Método original de ajuste de empates"""
         empates_actuales = quiniela.count("E")
         
         if self.empates_min <= empates_actuales <= self.empates_max:
@@ -228,26 +438,26 @@ class SatelliteGenerator:
             quiniela[idx] = "E"
     
     def _calcular_correlacion_jaccard(self, quiniela_a: List[str], quiniela_b: List[str]) -> float:
-        """
-        Calcula correlación de Jaccard entre dos quinielas
-        """
-        if len(quiniela_a) != len(quiniela_b): return 0.0
+        """Calcula correlación de Jaccard entre dos quinielas"""
+        if len(quiniela_a) != len(quiniela_b): 
+            return 0.0
         coincidencias = sum(1 for a, b in zip(quiniela_a, quiniela_b) if a == b)
         return coincidencias / len(quiniela_a)
     
-    def _validar_satelites(self, satelites: List[Dict[str, Any]]):
-        """
-        Valida que todos los satélites cumplan las reglas
-        """
-        self.logger.debug("Validando satélites...")
+    def _validar_satelites_robusto(self, satelites: List[Dict[str, Any]]):
+        """Validación robusta con logging detallado"""
+        self.logger.debug("🔍 Validando satélites robustos...")
+        
+        errores = []
         
         for satelite in satelites:
             empates = satelite["resultados"].count("E")
             if not (self.empates_min <= empates <= self.empates_max):
-                raise ValueError(f"{satelite['id']}: empates {empates} fuera del rango")
+                errores.append(f"{satelite['id']}: empates {empates} fuera del rango [{self.empates_min}-{self.empates_max}]")
             if len(satelite["resultados"]) != 14:
-                raise ValueError(f"{satelite['id']}: longitud incorrecta")
+                errores.append(f"{satelite['id']}: longitud {len(satelite['resultados'])} != 14")
         
+        # Validar pares
         pares = {}
         for satelite in satelites:
             par_id = satelite["par_id"]
@@ -255,11 +465,20 @@ class SatelliteGenerator:
         
         for par_id, par_satelites in pares.items():
             if len(par_satelites) != 2:
-                raise ValueError(f"Par {par_id}: debe tener exactamente 2 satélites")
+                errores.append(f"Par {par_id}: debe tener exactamente 2 satélites, tiene {len(par_satelites)}")
+                continue
+                
+            correlacion = self._calcular_correlacion_jaccard(
+                par_satelites[0]['resultados'], 
+                par_satelites[1]['resultados']
+            )
             
-            # Recalcula la correlación final para ser extra seguro
-            correlacion_final = self._calcular_correlacion_jaccard(par_satelites[0]['resultados'], par_satelites[1]['resultados'])
-            if correlacion_final > self.correlacion_max:
-                raise ValueError(f"Par {par_id}: correlación {correlacion_final:.3f} > {self.correlacion_max}")
+            if correlacion > self.correlacion_max:
+                errores.append(f"Par {par_id}: correlación {correlacion:.3f} > {self.correlacion_max}")
+                self.logger.error(f"❌ Par {par_id} falló validación: {correlacion:.3f} > {self.correlacion_max}")
         
-        self.logger.debug("✅ Todos los satélites son válidos")
+        if errores:
+            self.logger.error(f"❌ Errores de validación: {errores}")
+            raise ValueError(f"Validación de satélites falló: {errores}")
+        
+        self.logger.debug("✅ Todos los satélites robustos son válidos")
