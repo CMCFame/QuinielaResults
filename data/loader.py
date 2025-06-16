@@ -233,18 +233,21 @@ class DataLoader:
     def _generar_probs_por_tipo(self, config: Dict) -> tuple:
         """
         Genera probabilidades específicas según el tipo de partido diseñado
+        CORRECCIÓN: Probabilidades más altas para generar Anclas reales
         """
         tipo = config['tipo']
         prob_target = config['prob_target']
         
         if tipo == 'ancla_local':
-            prob_local = prob_target  # 0.62-0.68
-            prob_empate = np.random.uniform(0.18, 0.25)
+            # CORRECCIÓN: Probabilidades MUY altas para que después de calibración queden >60%
+            prob_local = max(0.75, prob_target + 0.15)  # 0.80-0.83 inicial
+            prob_empate = np.random.uniform(0.12, 0.18)  # Menor empate
             prob_visitante = 1.0 - prob_local - prob_empate
             
         elif tipo == 'ancla_visitante':
-            prob_visitante = prob_target  # 0.62-0.64
-            prob_empate = np.random.uniform(0.18, 0.25)
+            # CORRECCIÓN: Probabilidades MUY altas para visitantes
+            prob_visitante = max(0.75, prob_target + 0.15)  # 0.77-0.79 inicial  
+            prob_empate = np.random.uniform(0.12, 0.18)
             prob_local = 1.0 - prob_empate - prob_visitante
             
         elif tipo == 'empate':

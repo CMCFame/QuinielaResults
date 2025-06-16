@@ -174,8 +174,8 @@ class BayesianCalibrator:
         partidos_corregidos = []
         for partido in partidos:
             # Aplicar factores con suavizado (0.7 corrección + 0.3 original)
-            peso_correcion = 0.7
-            peso_original = 0.3
+            peso_correcion = 0.5
+            peso_original = 0.5
             
             p_local_corregido = (peso_correcion * partido["prob_local"] * factor_local + 
                                peso_original * partido["prob_local"])

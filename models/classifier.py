@@ -52,7 +52,7 @@ class PartidoClassifier:
             diferencia = probs_sorted[0] - probs_sorted[1]
             
             # ANTES: diferencia > 0.15, AHORA: diferencia > 0.10
-            if diferencia > 0.10:  # Diferencia mínima del 10% para alta confianza
+            if diferencia > 0.08:  # Diferencia mínima del 10% para alta confianza
                 clasificacion = "Ancla"
                 self.logger.debug(f"  -> ANCLA (max_prob={max_prob:.3f}, diff={diferencia:.3f})")
                 return clasificacion
