@@ -1,4 +1,4 @@
-# progol_optimizer/models/probability.py
+# progol_optimizer/models/probability.py - CORREGIDO
 """
 Modelo Bivariate-Poisson (OPCIONAL - Avanzado)
 Implementación de la distribución Bivariate-Poisson de la página 3
@@ -6,6 +6,7 @@ Solo necesario para implementación completa con momios de cierre
 """
 
 import numpy as np
+import math  # CORRECCIÓN: Importar math directamente
 import logging
 from scipy.special import comb
 from typing import Tuple, Dict, Any
@@ -66,7 +67,7 @@ class BivariatePoisson:
     
     def _bivariate_poisson_pmf(self, x: int, y: int, lambda1: float, lambda2: float, lambda3: float) -> float:
         """
-        Función de masa de probabilidad Bivariate-Poisson
+        Función de masa de probabilidad Bivariate-Poisson - CORREGIDA
         """
         if x < 0 or y < 0:
             return 0.0
@@ -74,9 +75,9 @@ class BivariatePoisson:
         # Término exponencial
         exp_term = np.exp(-(lambda1 + lambda2 + lambda3))
         
-        # Términos de potencia
-        lambda1_term = (lambda1 ** x) / np.math.factorial(x)
-        lambda2_term = (lambda2 ** y) / np.math.factorial(y)
+        # Términos de potencia - CORRECCIÓN: usar math.factorial en lugar de np.math.factorial
+        lambda1_term = (lambda1 ** x) / math.factorial(x)
+        lambda2_term = (lambda2 ** y) / math.factorial(y)
         
         # Suma de covarianza
         min_xy = min(x, y)
@@ -84,7 +85,7 @@ class BivariatePoisson:
         
         for k in range(min_xy + 1):
             if k <= x and k <= y:
-                lambda3_term = (lambda3 ** k) / np.math.factorial(k)
+                lambda3_term = (lambda3 ** k) / math.factorial(k)  # CORRECCIÓN: math.factorial
                 comb_x = comb(x, k, exact=True)
                 comb_y = comb(y, k, exact=True)
                 suma_cov += lambda3_term * comb_x * comb_y
