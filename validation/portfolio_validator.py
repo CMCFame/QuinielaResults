@@ -78,6 +78,7 @@ class PortfolioValidator:
                 },
                 "errores": {},  # Sin errores
                 "metricas": metricas,
+                "portafolio": portafolio_final, # Devolvemos el portafolio corregido
                 "resumen": "✅ PORTAFOLIO GARANTIZADO COMO VÁLIDO - Corrección automática aplicada"
             }
             
@@ -379,5 +380,6 @@ class PortfolioValidator:
             },
             "errores": {},
             "metricas": metricas_fallback,
+            "portafolio": portafolio_fallback,
             "resumen": "✅ PORTAFOLIO GARANTIZADO - Generado por fallback final"
         }

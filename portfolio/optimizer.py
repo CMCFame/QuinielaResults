@@ -353,12 +353,8 @@ class GRASPAnnealing:
             # El validador robusto SIEMPRE retorna algo válido
             resultado_validacion = validador.validar_portafolio_completo(portafolio)
             
-            # Si el resultado incluye un portafolio corregido, usarlo
-            if "portafolio" in resultado_validacion:
-                return resultado_validacion["portafolio"]
-            else:
-                # Si no, el portafolio ya está corregido internamente
-                return portafolio
+            # Devolvemos el portafolio que el validador ha corregido y garantizado
+            return resultado_validacion["portafolio"]
                 
         except Exception as e:
             self.logger.error(f"Error en validación robusta: {e}")
