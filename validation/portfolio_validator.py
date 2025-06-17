@@ -1,22 +1,19 @@
-# progol_optimizer/validation/portfolio_validator.py - VERSIÓN CORREGIDA
+# progol_optimizer/validation/portfolio_validator.py - HOTFIX CORREGIDO
 """
-Validador de Portafolio CORREGIDO - Garantiza 100% de portafolios válidos
-CORRECCIONES CRÍTICAS:
-- Acepta tanto 'E' como 'X' para empates
-- Rangos exactos según metodología (35-41% L, 25-33% E, 30-36% V)
-- Validación de correlación Jaccard ≤ 0.57
-- Función de balanceo automático post-optimización
+Validador de Portafolio CORREGIDO - HOTFIX para error 'list' object has no attribute 'upper'
+CORRECCIÓN CRÍTICA: Manejo correcto de tipos string/list en quinielas
 """
 
 import logging
 import numpy as np
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Union
 from collections import Counter
 from itertools import combinations
 
 class PortfolioValidator:
     """
     Validador CORREGIDO que implementa las 6 reglas obligatorias sin excepciones
+    HOTFIX: Manejo correcto de quinielas como string o lista
     """
     
     def __init__(self):
@@ -38,30 +35,66 @@ class PortfolioValidator:
         
         self.logger.debug("✅ PortfolioValidator CORREGIDO inicializado")
 
+    def _normalizar_quiniela(self, quiniela: Union[str, List[str]]) -> str:
+        """
+        NUEVO: Normaliza quiniela a string sin importar el formato de entrada
+        """
+        if isinstance(quiniela, str):
+            return quiniela.upper()
+        elif isinstance(quiniela, list):
+            return "".join(str(x).upper() for x in quiniela)
+        else:
+            self.logger.warning(f"Tipo de quiniela inesperado: {type(quiniela)}")
+            return str(quiniela).upper()
+
+    def _extraer_quinielas_string(self, portafolio: List[Dict[str, Any]]) -> List[str]:
+        """
+        NUEVO: Extrae quinielas como strings normalizados del portafolio
+        """
+        quinielas_str = []
+        
+        for item in portafolio:
+            if isinstance(item, dict):
+                if "resultados" in item:
+                    quiniela = self._normalizar_quiniela(item["resultados"])
+                else:
+                    self.logger.warning(f"Dict sin 'resultados': {item}")
+                    continue
+            else:
+                quiniela = self._normalizar_quiniela(item)
+            
+            quinielas_str.append(quiniela)
+        
+        return quinielas_str
+
     def validar_portafolio_completo(self, portafolio: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Validación COMPLETA con corrección automática si falla
+        HOTFIX: Manejo seguro de tipos de datos
         """
         self.logger.info("🔍 Iniciando validación completa CORREGIDA...")
         
-        # Extraer solo las quinielas string
-        quinielas_str = [q["resultados"] if isinstance(q, dict) else q for q in portafolio]
-        
-        # PASO 1: Validación inicial
-        errores = self._validar_todas_las_reglas(quinielas_str)
-        
-        if not errores:
-            self.logger.info("✅ Portafolio VÁLIDO - No requiere corrección")
-            return self._crear_resultado_validacion(True, portafolio, {})
-        
-        # PASO 2: CORRECCIÓN AUTOMÁTICA
-        self.logger.warning(f"⚠️ Encontrados {len(errores)} errores, aplicando corrección automática...")
-        
         try:
+            # HOTFIX: Extraer quinielas de forma segura
+            quinielas_str = self._extraer_quinielas_string(portafolio)
+            
+            if len(quinielas_str) != 30:
+                self.logger.warning(f"Se esperaban 30 quinielas, se encontraron {len(quinielas_str)}")
+            
+            # PASO 1: Validación inicial
+            errores = self._validar_todas_las_reglas(quinielas_str)
+            
+            if not errores:
+                self.logger.info("✅ Portafolio VÁLIDO - No requiere corrección")
+                return self._crear_resultado_validacion(True, portafolio, {})
+            
+            # PASO 2: CORRECCIÓN AUTOMÁTICA
+            self.logger.warning(f"⚠️ Encontrados {len(errores)} errores, aplicando corrección automática...")
+            
             portafolio_corregido = self._balancear_portafolio_automatico(portafolio, quinielas_str)
             
             # Verificar que la corrección funcionó
-            quinielas_corregidas = [q["resultados"] if isinstance(q, dict) else q for q in portafolio_corregido]
+            quinielas_corregidas = self._extraer_quinielas_string(portafolio_corregido)
             errores_finales = self._validar_todas_las_reglas(quinielas_corregidas)
             
             if not errores_finales:
@@ -72,18 +105,27 @@ class PortfolioValidator:
                 return self._crear_resultado_validacion(False, portafolio, errores_finales)
                 
         except Exception as e:
-            self.logger.error(f"❌ Error en corrección automática: {e}")
-            return self._crear_resultado_validacion(False, portafolio, errores)
+            self.logger.error(f"❌ Error en validación completa: {e}")
+            import traceback
+            traceback.print_exc()
+            return self._crear_resultado_validacion(False, portafolio, {"error_general": [str(e)]})
 
     def _validar_todas_las_reglas(self, quinielas: List[str]) -> Dict[str, List[str]]:
         """
         Valida TODAS las reglas de la metodología
-        Retorna: {quiniela: [errores]} - vacío si es válido
+        HOTFIX: Manejo seguro de strings
         """
         errores = {}
         
+        # Asegurar que todas las quinielas son strings
+        quinielas_normalizadas = [self._normalizar_quiniela(q) for q in quinielas]
+        
         # REGLA 1-4: Validación por quiniela individual
-        for i, quiniela in enumerate(quinielas):
+        for i, quiniela in enumerate(quinielas_normalizadas):
+            if len(quiniela) != 14:
+                errores[f"Quiniela_{i}"] = [f"Longitud incorrecta: {len(quiniela)} != 14"]
+                continue
+                
             conteos = self._contar_signos(quiniela)
             errores_quiniela = []
             
@@ -105,22 +147,23 @@ class PortfolioValidator:
                 errores_quiniela.append(f"Concentración {max_concentracion:.1%} > {self.MAX_SIGN_GLOBAL:.0%}")
             
             # Concentración primeros 3
-            primeros_3 = self._contar_signos(quiniela[:3])
-            max_conc_inicial = max(primeros_3.values()) / 3
-            if max_conc_inicial > self.MAX_SIGN_1_3:
-                errores_quiniela.append(f"Concentración inicial {max_conc_inicial:.1%} > {self.MAX_SIGN_1_3:.0%}")
+            if len(quiniela) >= 3:
+                primeros_3 = self._contar_signos(quiniela[:3])
+                max_conc_inicial = max(primeros_3.values()) / 3
+                if max_conc_inicial > self.MAX_SIGN_1_3:
+                    errores_quiniela.append(f"Concentración inicial {max_conc_inicial:.1%} > {self.MAX_SIGN_1_3:.0%}")
             
             if errores_quiniela:
                 errores[f"Quiniela_{i}"] = errores_quiniela
         
         # REGLA 5: Duplicados
-        for i, j in combinations(range(len(quinielas)), 2):
-            if quinielas[i] == quinielas[j]:
+        for i, j in combinations(range(len(quinielas_normalizadas)), 2):
+            if quinielas_normalizadas[i] == quinielas_normalizadas[j]:
                 errores.setdefault(f"Quiniela_{i}", []).append(f"Duplicada con Quiniela_{j}")
         
         # REGLA 6: Correlación Jaccard
-        for i, j in combinations(range(len(quinielas)), 2):
-            jaccard = self._calcular_jaccard(quinielas[i], quinielas[j])
+        for i, j in combinations(range(len(quinielas_normalizadas)), 2):
+            jaccard = self._calcular_jaccard(quinielas_normalizadas[i], quinielas_normalizadas[j])
             if jaccard > self.MAX_JACCARD:
                 errores.setdefault(f"Quiniela_{i}", []).append(
                     f"Correlación {jaccard:.3f} > {self.MAX_JACCARD} con Quiniela_{j}"
@@ -132,62 +175,84 @@ class PortfolioValidator:
                                        quinielas_str: List[str]) -> List[Dict[str, Any]]:
         """
         CORRECCIÓN AUTOMÁTICA: Balancea el portafolio para cumplir todas las reglas
+        HOTFIX: Manejo seguro de tipos de datos
         """
         self.logger.info("🔧 Aplicando balanceo automático...")
         
-        portafolio_corregido = []
-        quinielas_corregidas = quinielas_str.copy()
-        
-        # Paso 1: Corregir quinielas individuales
-        for i, quiniela in enumerate(quinielas_corregidas):
-            quiniela_balanceada = self._balancear_quiniela_individual(quiniela)
-            quinielas_corregidas[i] = quiniela_balanceada
-        
-        # Paso 2: Eliminar duplicados
-        quinielas_corregidas = self._eliminar_duplicados(quinielas_corregidas)
-        
-        # Paso 3: Corregir correlaciones Jaccard
-        quinielas_corregidas = self._corregir_correlaciones_jaccard(quinielas_corregidas)
-        
-        # Paso 4: Asegurar 30 quinielas únicas
-        while len(quinielas_corregidas) < 30:
-            nueva_quiniela = self._generar_quiniela_compatible(quinielas_corregidas)
-            quinielas_corregidas.append(nueva_quiniela)
-        
-        # Reconstruir portafolio con estructura original
-        for i, quiniela_corregida in enumerate(quinielas_corregidas):
-            if i < len(portafolio):
-                quiniela_info = portafolio[i].copy() if isinstance(portafolio[i], dict) else {
-                    "id": f"Corregida-{i+1}",
-                    "tipo": "Core" if i < 4 else "Satelite",
-                    "par_id": (i-4)//2 if i >= 4 else None
-                }
-            else:
-                quiniela_info = {
-                    "id": f"Generada-{i+1}",
-                    "tipo": "Satelite",
-                    "par_id": (i-4)//2 if i >= 4 else None
-                }
+        try:
+            portafolio_corregido = []
+            quinielas_corregidas = [self._normalizar_quiniela(q) for q in quinielas_str]
             
-            quiniela_info.update({
-                "resultados": quiniela_corregida,
-                "empates": quiniela_corregida.count("E") + quiniela_corregida.count("X"),
-                "distribución": {
-                    "L": quiniela_corregida.count("L"),
-                    "E": quiniela_corregida.count("E") + quiniela_corregida.count("X"),
-                    "V": quiniela_corregida.count("V")
-                }
-            })
+            # Paso 1: Corregir quinielas individuales
+            for i, quiniela in enumerate(quinielas_corregidas):
+                try:
+                    quiniela_balanceada = self._balancear_quiniela_individual(quiniela)
+                    quinielas_corregidas[i] = quiniela_balanceada
+                except Exception as e:
+                    self.logger.warning(f"Error balanceando quiniela {i}: {e}")
+                    # Fallback: generar quiniela balanceada desde cero
+                    quinielas_corregidas[i] = self._generar_quiniela_basica_balanceada()
             
-            portafolio_corregido.append(quiniela_info)
-        
-        return portafolio_corregido
+            # Paso 2: Eliminar duplicados
+            quinielas_corregidas = self._eliminar_duplicados(quinielas_corregidas)
+            
+            # Paso 3: Corregir correlaciones Jaccard
+            quinielas_corregidas = self._corregir_correlaciones_jaccard(quinielas_corregidas)
+            
+            # Paso 4: Asegurar 30 quinielas únicas
+            while len(quinielas_corregidas) < 30:
+                nueva_quiniela = self._generar_quiniela_compatible(quinielas_corregidas)
+                quinielas_corregidas.append(nueva_quiniela)
+            
+            # Reconstruir portafolio con estructura original
+            for i, quiniela_corregida in enumerate(quinielas_corregidas[:30]):  # Máximo 30
+                if i < len(portafolio):
+                    quiniela_info = portafolio[i].copy() if isinstance(portafolio[i], dict) else {
+                        "id": f"Corregida-{i+1}",
+                        "tipo": "Core" if i < 4 else "Satelite",
+                        "par_id": (i-4)//2 if i >= 4 else None
+                    }
+                else:
+                    quiniela_info = {
+                        "id": f"Generada-{i+1}",
+                        "tipo": "Satelite",
+                        "par_id": (i-4)//2 if i >= 4 else None
+                    }
+                
+                # HOTFIX: Asegurar que resultados es string
+                quiniela_info.update({
+                    "resultados": quiniela_corregida,  # Ya es string normalizado
+                    "empates": quiniela_corregida.count("E") + quiniela_corregida.count("X"),
+                    "distribución": {
+                        "L": quiniela_corregida.count("L"),
+                        "E": quiniela_corregida.count("E") + quiniela_corregida.count("X"),
+                        "V": quiniela_corregida.count("V")
+                    }
+                })
+                
+                portafolio_corregido.append(quiniela_info)
+            
+            return portafolio_corregido
+            
+        except Exception as e:
+            self.logger.error(f"Error en balanceo automático: {e}")
+            import traceback
+            traceback.print_exc()
+            return self._generar_portafolio_emergencia()
 
-    def _balancear_quiniela_individual(self, quiniela: str) -> str:
+    def _balancear_quiniela_individual(self, quiniela: Union[str, List[str]]) -> str:
         """
         Balancea una quiniela individual para cumplir límites L/E/V y empates
+        HOTFIX: Manejo seguro de tipos string/list
         """
-        signos = list(quiniela.upper())
+        # HOTFIX: Normalizar entrada
+        quiniela_str = self._normalizar_quiniela(quiniela)
+        
+        if len(quiniela_str) != 14:
+            self.logger.warning(f"Quiniela con longitud incorrecta: {len(quiniela_str)}")
+            return self._generar_quiniela_basica_balanceada()
+        
+        signos = list(quiniela_str)
         max_intentos = 100
         intento = 0
         
@@ -204,19 +269,17 @@ class PortfolioValidator:
             
             # Corregir empates
             if conteos["E"] < self.LIM_EMPATES[0]:
-                # Necesita más empates
                 indices_no_empate = [i for i, s in enumerate(signos) if s not in self.EMPATE_CHARS]
                 if indices_no_empate:
                     idx = np.random.choice(indices_no_empate)
                     signos[idx] = "E"
             elif conteos["E"] > self.LIM_EMPATES[1]:
-                # Necesita menos empates
                 indices_empate = [i for i, s in enumerate(signos) if s in self.EMPATE_CHARS]
                 if indices_empate:
                     idx = np.random.choice(indices_empate)
                     signos[idx] = np.random.choice(["L", "V"])
             
-            # Corregir L/E/V si aún no está balanceado
+            # Corregir L/E/V
             if conteos["L"] < self.LIM_L[0]:
                 indices_no_l = [i for i, s in enumerate(signos) if s != "L"]
                 if indices_no_l:
@@ -243,18 +306,67 @@ class PortfolioValidator:
         
         return "".join(signos)
 
+    def _generar_quiniela_basica_balanceada(self) -> str:
+        """
+        NUEVO: Genera una quiniela básica balanceada como fallback
+        """
+        # Distribución simple balanceada
+        num_l = 5  # Centro del rango [5,6]
+        num_e = 4  # Centro del rango [3,5] pero respetando LIM_EMPATES
+        num_v = 5  # 14 - 5 - 4 = 5, en rango [4,5]
+        
+        signos = ["L"] * num_l + ["E"] * num_e + ["V"] * num_v
+        np.random.shuffle(signos)
+        
+        return "".join(signos)
+
+    def _generar_portafolio_emergencia(self) -> List[Dict[str, Any]]:
+        """
+        NUEVO: Genera portafolio de emergencia si todo falla
+        """
+        self.logger.warning("🚨 Generando portafolio de emergencia")
+        
+        portafolio_emergencia = []
+        
+        for i in range(30):
+            quiniela_balanceada = self._generar_quiniela_basica_balanceada()
+            
+            # Asegurar unicidad
+            quinielas_existentes = [q["resultados"] for q in portafolio_emergencia]
+            intentos = 0
+            while quiniela_balanceada in quinielas_existentes and intentos < 100:
+                quiniela_balanceada = self._generar_quiniela_basica_balanceada()
+                intentos += 1
+            
+            portafolio_emergencia.append({
+                "id": f"Emergencia-{i+1}",
+                "tipo": "Core" if i < 4 else "Satelite",
+                "par_id": (i-4)//2 if i >= 4 else None,
+                "resultados": quiniela_balanceada,
+                "empates": quiniela_balanceada.count("E"),
+                "distribución": {
+                    "L": quiniela_balanceada.count("L"),
+                    "E": quiniela_balanceada.count("E"),
+                    "V": quiniela_balanceada.count("V")
+                }
+            })
+        
+        return portafolio_emergencia
+
+    # ========== MÉTODOS AUXILIARES (sin cambios significativos) ==========
+
     def _eliminar_duplicados(self, quinielas: List[str]) -> List[str]:
         """Elimina duplicados manteniendo las primeras ocurrencias"""
         vistas = set()
         resultado = []
         
         for quiniela in quinielas:
-            if quiniela not in vistas:
-                vistas.add(quiniela)
-                resultado.append(quiniela)
+            quiniela_norm = self._normalizar_quiniela(quiniela)
+            if quiniela_norm not in vistas:
+                vistas.add(quiniela_norm)
+                resultado.append(quiniela_norm)
             else:
-                # Generar variación única
-                nueva = self._generar_variacion_unica(quiniela, vistas)
+                nueva = self._generar_variacion_unica(quiniela_norm, vistas)
                 vistas.add(nueva)
                 resultado.append(nueva)
         
@@ -262,21 +374,19 @@ class PortfolioValidator:
 
     def _corregir_correlaciones_jaccard(self, quinielas: List[str]) -> List[str]:
         """Corrige correlaciones Jaccard > 0.57"""
-        resultado = quinielas.copy()
+        resultado = [self._normalizar_quiniela(q) for q in quinielas]
         
         for i, j in combinations(range(len(resultado)), 2):
             jaccard = self._calcular_jaccard(resultado[i], resultado[j])
             if jaccard > self.MAX_JACCARD:
-                # Mutar la segunda quiniela
                 resultado[j] = self._reducir_correlacion(resultado[i], resultado[j])
         
         return resultado
 
     def _generar_variacion_unica(self, quiniela_base: str, existentes: set) -> str:
         """Genera una variación única de la quiniela base"""
-        for _ in range(100):  # Máximo 100 intentos
+        for _ in range(100):
             signos = list(quiniela_base)
-            # Cambiar 1-2 posiciones aleatoriamente
             num_cambios = np.random.randint(1, 3)
             indices = np.random.choice(len(signos), num_cambios, replace=False)
             
@@ -287,62 +397,42 @@ class PortfolioValidator:
             if nueva not in existentes:
                 return self._balancear_quiniela_individual(nueva)
         
-        # Fallback: cambio sistemático
-        return self._balancear_quiniela_individual(quiniela_base)
+        return self._generar_quiniela_basica_balanceada()
 
     def _reducir_correlacion(self, quiniela_a: str, quiniela_b: str) -> str:
         """Reduce correlación entre dos quinielas modificando la segunda"""
         signos = list(quiniela_b)
-        
-        # Cambiar posiciones donde coinciden
         coincidencias = [i for i, (a, b) in enumerate(zip(quiniela_a, quiniela_b)) if a == b]
         
-        if len(coincidencias) > 8:  # Si correlación muy alta, cambiar 2-3 posiciones
+        if len(coincidencias) > 8:
             indices_cambio = np.random.choice(coincidencias, min(3, len(coincidencias)), replace=False)
             
             for idx in indices_cambio:
                 opciones = ["L", "E", "V"]
-                opciones.remove(signos[idx])  # Remover actual
+                if signos[idx] in opciones:
+                    opciones.remove(signos[idx])
                 signos[idx] = np.random.choice(opciones)
         
         return self._balancear_quiniela_individual("".join(signos))
 
     def _generar_quiniela_compatible(self, existentes: List[str]) -> str:
         """Genera una nueva quiniela compatible con todas las reglas"""
-        for _ in range(1000):  # Máximo 1000 intentos
-            # Generar quiniela balanceada
-            signos = []
+        for _ in range(1000):
+            nueva = self._generar_quiniela_basica_balanceada()
             
-            # Distribución objetivo (centro de los rangos)
-            num_l = np.random.randint(self.LIM_L[0], self.LIM_L[1] + 1)
-            num_e = np.random.randint(max(self.LIM_E[0], self.LIM_EMPATES[0]), 
-                                   min(self.LIM_E[1], self.LIM_EMPATES[1]) + 1)
-            num_v = 14 - num_l - num_e
-            
-            # Verificar que V esté en rango
-            if not (self.LIM_V[0] <= num_v <= self.LIM_V[1]):
-                continue
-            
-            # Construir quiniela
-            signos = ["L"] * num_l + ["E"] * num_e + ["V"] * num_v
-            np.random.shuffle(signos)
-            quiniela = "".join(signos)
-            
-            # Verificar unicidad y correlación
-            if quiniela in existentes:
+            if nueva in existentes:
                 continue
             
             jaccard_ok = True
             for existente in existentes:
-                if self._calcular_jaccard(quiniela, existente) > self.MAX_JACCARD:
+                if self._calcular_jaccard(nueva, existente) > self.MAX_JACCARD:
                     jaccard_ok = False
                     break
             
             if jaccard_ok:
-                return quiniela
+                return nueva
         
-        # Fallback: quiniela básica balanceada
-        return "LLEELLEVELVLVE"  # 5L, 4E, 5V - cumple todos los rangos
+        return self._generar_quiniela_basica_balanceada()
 
     def _contar_signos(self, quiniela: str) -> Counter:
         """Cuenta signos normalizando E/X"""
@@ -362,17 +452,19 @@ class PortfolioValidator:
             return 0.0
         
         interseccion = sum(1 for x, y in zip(a, b) if x == y)
-        union = len(a)  # Ambas tienen la misma longitud
+        union = len(a)
         
         return interseccion / union if union > 0 else 0.0
 
     def _crear_resultado_validacion(self, es_valido: bool, portafolio: List[Dict[str, Any]], 
                                   errores: Dict[str, List[str]]) -> Dict[str, Any]:
         """Crea resultado estructurado de validación"""
-        
-        # Calcular métricas
-        quinielas_str = [q["resultados"] if isinstance(q, dict) else q for q in portafolio]
-        metricas = self._calcular_metricas_portafolio(quinielas_str)
+        try:
+            quinielas_str = self._extraer_quinielas_string(portafolio)
+            metricas = self._calcular_metricas_portafolio(quinielas_str)
+        except Exception as e:
+            self.logger.warning(f"Error calculando métricas: {e}")
+            metricas = {"error": str(e)}
         
         return {
             "es_valido": es_valido,
@@ -394,13 +486,11 @@ class PortfolioValidator:
         if not quinielas:
             return {}
         
-        # Distribución global
         total_l = sum(q.count("L") for q in quinielas)
         total_e = sum(q.count("E") + q.count("X") for q in quinielas)
         total_v = sum(q.count("V") for q in quinielas)
         total_partidos = len(quinielas) * 14
         
-        # Empates por quiniela
         empates_por_quiniela = [q.count("E") + q.count("X") for q in quinielas]
         
         return {
