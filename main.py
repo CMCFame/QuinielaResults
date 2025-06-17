@@ -1,11 +1,12 @@
-# progol_optimizer/main.py - VERSIÓN CORREGIDA
+# progol_optimizer/main.py - VERSIÓN CORREGIDA Y ROBUSTA
 """
 Orquestador Principal CORREGIDO - Garantiza portafolios 100% válidos
-CORRECCIÓN CRÍTICA: Flujo de validación obligatoria integrado
+CORRECCIÓN CRÍTICA: Flujo de validación obligatoria integrado y manejo de errores robusto.
 """
 
 import logging
 import sys
+import traceback
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -47,41 +48,34 @@ class ProgolOptimizer:
         
         self.logger.info("✅ ProgolOptimizer CORREGIDO inicializado")
     
-    def procesar_concurso(self, archivo_datos: str = None, concurso_id: str = "2283", progress_callback=None) -> Dict[str, Any]:
+    def procesar_concurso(self, datos_partidos: List[Dict[str, Any]], concurso_id: str = "2283", progress_callback=None) -> Dict[str, Any]:
         """
-        Ejecuta el pipeline completo CORREGIDO que garantiza portafolios válidos
+        Ejecuta el pipeline completo CORREGIDO que garantiza portafolios válidos.
+        Ahora recibe los datos directamente en lugar de una ruta de archivo.
         """
-        self.logger.info(f"=== PROCESANDO CONCURSO {concurso_id} (VERSIÓN CORREGIDA) ===")
+        self.logger.info(f"=== PROCESANDO CONCURSO {concurso_id} (VERSIÓN ROBUSTA) ===")
         
         try:
-            # PASO 1: Cargar datos
-            self.logger.info("PASO 1: Cargando datos...")
-            if archivo_datos:
-                partidos = self.data_loader.cargar_datos(archivo_datos)
-            else:
-                partidos = self.data_loader._generar_datos_ejemplo()
-            
+            # PASO 1: Usar datos ya cargados
+            self.logger.info("PASO 1: Utilizando datos pre-cargados...")
+            partidos = datos_partidos
+            if not partidos or len(partidos) != 14:
+                raise ValueError(f"Se recibieron {len(partidos) if partidos else 0} partidos, se requieren 14.")
+
             # PASO 2: Validar datos
             self.logger.info("PASO 2: Validando estructura de datos...")
             es_valido, errores = self.data_validator.validar_estructura(partidos)
             if not es_valido:
                 self.logger.warning(f"Datos de entrada con problemas: {errores}. El sistema intentará continuar.")
 
-            
             # PASO 3: Calibración global
             self.logger.info("PASO 3: Aplicando calibración bayesiana global...")
             partidos_calibrados = self.calibrator.calibrar_concurso_completo(partidos)
             
-            # Aplicar clasificación después de calibración
             partidos_procesados = []
             for i, partido_calibrado in enumerate(partidos_calibrados):
                 clasificacion = self.classifier.clasificar_partido(partido_calibrado)
-                
-                partido_final = {
-                    **partido_calibrado,
-                    "id": i,
-                    "clasificacion": clasificacion
-                }
+                partido_final = {"id": i, "clasificacion": clasificacion, **partido_calibrado}
                 partidos_procesados.append(partido_final)
             
             stats_clasificacion = self.classifier.obtener_estadisticas_clasificacion(partidos_procesados)
@@ -92,25 +86,19 @@ class ProgolOptimizer:
             
             # PASO 5: Generar satélites
             self.logger.info("PASO 5: Generando 26 satélites en pares...")
-            quinielas_satelites = self.satellite_generator.generar_pares_satelites(
-                partidos_procesados, 26
-            )
+            quinielas_satelites = self.satellite_generator.generar_pares_satelites(partidos_procesados, 26)
             
-            # PASO 6: OPTIMIZACIÓN CORREGIDA (incluye validación y corrección automática)
-            self.logger.info("PASO 6: Ejecutando optimización CORREGIDA con validación obligatoria...")
+            # PASO 6: OPTIMIZACIÓN CORREGIDA
+            self.logger.info("PASO 6: Ejecutando optimización con validación integrada...")
             portafolio_inicial = quinielas_core + quinielas_satelites
             
             portafolio_optimizado = self.optimizer.optimizar_portafolio_grasp_annealing(
                 portafolio_inicial, partidos_procesados, progress_callback
             )
             
-            # PASO 7: VALIDACIÓN FINAL OBLIGATORIA (Ahora SIEMPRE devuelve un portafolio válido)
+            # PASO 7: VALIDACIÓN FINAL OBLIGATORIA
             self.logger.info("PASO 7: Validación final y empaquetado...")
-            resultado_validacion = self.portfolio_validator.validar_portafolio_completo(
-                portafolio_optimizado
-            )
-            
-            # El portafolio final es el que el validador garantiza
+            resultado_validacion = self.portfolio_validator.validar_portafolio_completo(portafolio_optimizado)
             portafolio_final = resultado_validacion["portafolio"]
 
             # PASO 8: Exportar resultados
@@ -122,7 +110,6 @@ class ProgolOptimizer:
                 concurso_id
             )
             
-            # Resultado final
             resultado = {
                 "success": True,
                 "portafolio": portafolio_final,
@@ -134,26 +121,27 @@ class ProgolOptimizer:
                 "concurso_id": concurso_id
             }
             
-            metricas = resultado_validacion["metricas"]
-            dist = metricas["distribucion_global"]["porcentajes"]
-            
-            self.logger.info("🎉" + "="*60)
             self.logger.info(f"✅ CONCURSO {concurso_id} PROCESADO EXITOSAMENTE")
-            self.logger.info(f"✅ PORTAFOLIO GARANTIZADO COMO 100% VÁLIDO")
-            self.logger.info(f"   → {len(portafolio_final)} quinielas generadas")
-            self.logger.info(f"   → Distribución: L={dist['L']:.1%}, E={dist['E']:.1%}, V={dist['V']:.1%}")
-            self.logger.info(f"   → Clasificación: {stats_clasificacion['distribución']}")
-            self.logger.info(f"   → {len(archivos_exportados)} archivos exportados")
-            self.logger.info("🎉" + "="*60)
-            
             return resultado
             
         except Exception as e:
             self.logger.error(f"❌ Error procesando concurso: {e}", exc_info=True)
+            # **CORRECCIÓN CLAVE**: Devolver una estructura completa en caso de error
             return {
                 "success": False,
                 "error": str(e),
-                "concurso_id": concurso_id
+                "concurso_id": concurso_id,
+                "portafolio": [],
+                "partidos": [],
+                "validacion": {
+                    "es_valido": False,
+                    "resumen": "El proceso de optimización falló.",
+                    "metricas": {},
+                    "errores": {"general": str(e)}
+                },
+                "metricas": {},
+                "estadisticas_clasificacion": {},
+                "archivos_exportados": {}
             }
 
 def main():
