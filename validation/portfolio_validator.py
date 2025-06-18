@@ -217,31 +217,34 @@ class PortfolioValidator:
                     return False
         
         return True
-    
+ 
     def _validar_distribucion_equilibrada(self, portafolio: List[Dict[str, Any]]) -> bool:
         """
-        Valida que cada resultado aparezca equilibradamente en divisores
-        (regla de hiper-diversificación de la página 4)
+        Valida que cada resultado (L,E,V) aparezca de forma equilibrada en cada una de las 14 posiciones.
+        (Regla de hiper-diversificación de la página 4)
         """
-        # Por ahora, validación básica de que no hay desbalance extremo
         total_quinielas = len(portafolio)
-        
         if total_quinielas == 0:
-            return False
-        
-        # Contar apariciones de cada resultado por posición
+            return True
+
+        # Límites para una distribución equilibrada en 30 quinielas
+        # Ningún resultado debe aparecer más de ~66% de las veces ni menos de ~10%
+        max_apariciones = total_quinielas * 0.67 # Aprox. 20 de 30
+        min_apariciones = total_quinielas * 0.10  # Aprox. 3 de 30
+
         for posicion in range(14):
             conteos = {"L": 0, "E": 0, "V": 0}
-            
             for quiniela in portafolio:
                 resultado = quiniela["resultados"][posicion]
                 conteos[resultado] += 1
             
-            # Verificar que ningún resultado domine completamente una posición
+            # Verificar que ningún resultado domine excesivamente o esté ausente
             for resultado, count in conteos.items():
-                porcentaje = count / total_quinielas
-                if porcentaje > 0.85:  # Más del 85% es concentración excesiva
-                    self.logger.debug(f"Posición {posicion}: resultado {resultado} aparece {porcentaje:.1%} veces")
+                if count > max_apariciones:
+                    self.logger.debug(f"Desequilibrio en Posición {posicion+1}: {resultado} aparece {count} veces (> {max_apariciones})")
+                    return False
+                if count < min_apariciones:
+                    self.logger.debug(f"Desequilibrio en Posición {posicion+1}: {resultado} aparece solo {count} veces (< {min_apariciones})")
                     return False
         
         return True
