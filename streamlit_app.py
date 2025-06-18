@@ -643,60 +643,47 @@ class ProgolStreamlitApp:
         return fig
 
     def mostrar_tabla_quinielas(self, portafolio, partidos):
-        """Mostrar tabla interactiva de quinielas - CORREGIDA CON NOMBRES DE EQUIPOS"""
+        """Mostrar tabla interactiva de quinielas - CORREGIDA CON NOMBRES Y TIPO DE DATO PAR"""
         st.subheader("🎯 Quinielas Generadas")
 
-        # MEJORA: Crear lista de partidos para referencia
-        partidos_info = []
-        for partido in partidos:
-            partidos_info.append(f"{partido['home']} vs {partido['away']}")
+        partidos_info = [f"{p['home']} vs {p['away']}" for p in partidos]
 
-        # Crear DataFrame
         data_tabla = []
         for quiniela in portafolio:
             fila = {
                 "ID": quiniela["id"],
                 "Tipo": quiniela["tipo"],
-                "Par": quiniela.get("par_id", ""),
+                # CORRECCIÓN CRÍTICA: Convertir el par_id a string para evitar error de tipo
+                "Par": str(quiniela.get("par_id", "")),
                 "Quiniela": "".join(quiniela["resultados"]),
                 "Empates": quiniela["resultados"].count("E"),
                 "L": quiniela["resultados"].count("L"),
                 "E": quiniela["resultados"].count("E"),
                 "V": quiniela["resultados"].count("V")
             }
-
-            # Agregar partidos individuales CON NOMBRES DE EQUIPOS
+            # Agregar partidos individuales
             for i, resultado in enumerate(quiniela["resultados"]):
-                if i < len(partidos_info):
-                    fila[f"P{i+1}"] = f"{resultado} ({partidos_info[i][:15]}...)"
-                else:
-                    fila[f"P{i+1}"] = resultado
-
+                partido_desc = f"{partidos_info[i][:15]}..." if i < len(partidos_info) else ""
+                fila[f"P{i+1}"] = f"{resultado} ({partido_desc})"
             data_tabla.append(fila)
 
         df_quinielas = pd.DataFrame(data_tabla)
 
         # Filtros
         col_filtro1, col_filtro2 = st.columns(2)
-
         with col_filtro1:
             tipos_seleccionados = st.multiselect(
                 "Filtrar por tipo:",
                 options=df_quinielas["Tipo"].unique(),
                 default=df_quinielas["Tipo"].unique()
             )
-
         with col_filtro2:
-            # CORRECCIÓN CRÍTICA: Verificar si min != max antes de crear slider
             empates_min = int(df_quinielas["Empates"].min())
             empates_max = int(df_quinielas["Empates"].max())
-
             if empates_min == empates_max:
-                # Si todas las quinielas tienen los mismos empates, mostrar info en lugar de slider
                 st.info(f"📊 Todas las quinielas tienen {empates_min} empates")
                 rango_empates = (empates_min, empates_max)
             else:
-                # Solo crear slider si hay rango válido
                 rango_empates = st.slider(
                     "Filtrar por número de empates:",
                     min_value=empates_min,
@@ -710,30 +697,15 @@ class ProgolStreamlitApp:
             (df_quinielas["Empates"] >= rango_empates[0]) &
             (df_quinielas["Empates"] <= rango_empates[1])
         ]
-
-        # MEJORA: Mostrar tabla de partidos para referencia
+        
         with st.expander("📋 Ver Partidos del Concurso"):
             partidos_df = pd.DataFrame([
-                {
-                    "#": i+1,
-                    "Partido": f"{p['home']} vs {p['away']}",
-                    "Liga": p['liga'],
-                    "Clasificación": p.get('clasificacion', 'N/A'),
-                    "P(L)": f"{p['prob_local']:.3f}",
-                    "P(E)": f"{p['prob_empate']:.3f}",
-                    "P(V)": f"{p['prob_visitante']:.3f}"
-                }
+                {"#": i+1, "Partido": f"{p['home']} vs {p['away']}", "Clasificación": p.get('clasificacion', 'N/A')}
                 for i, p in enumerate(partidos)
             ])
             st.dataframe(partidos_df, use_container_width=True, hide_index=True)
 
-        # Mostrar tabla principal
-        st.dataframe(
-            df_filtrado,
-            use_container_width=True,
-            hide_index=True
-        )
-
+        st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
         st.caption(f"Mostrando {len(df_filtrado)} de {len(df_quinielas)} quinielas")
 
     def mostrar_opciones_descarga(self, resultado):
