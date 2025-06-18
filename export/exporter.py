@@ -1,6 +1,7 @@
 # progol_optimizer/export/exporter.py
 """
-Exportador de Portafolio - Genera archivos CSV, JSON, PDF con los resultados
+Exportador de Portafolio - Genera archivos CSV, JSON, TXT con los resultados
+CORRECCIÓN: Maneja correctamente el formato de 'resultados' como string.
 """
 
 import logging
@@ -29,15 +30,6 @@ class PortfolioExporter:
                                    concurso_id: str = None) -> Dict[str, str]:
         """
         Exporta el portafolio completo en todos los formatos disponibles
-        
-        Args:
-            portafolio: 30 quinielas optimizadas
-            partidos: Datos de partidos con clasificación
-            metricas: Métricas de validación
-            concurso_id: ID del concurso
-            
-        Returns:
-            Dict[str, str]: Rutas de archivos generados
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         concurso_str = f"_{concurso_id}" if concurso_id else ""
@@ -72,7 +64,7 @@ class PortfolioExporter:
             return archivos_generados
             
         except Exception as e:
-            self.logger.error(f"Error en exportación: {e}")
+            self.logger.error(f"Error en exportación: {e}", exc_info=True)
             raise
     
     def _exportar_csv_quinielas(self, portafolio: List[Dict[str, Any]], timestamp: str, concurso_str: str) -> str:
@@ -84,21 +76,22 @@ class PortfolioExporter:
         with open(archivo, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             
-            # Encabezado
             header = ['ID', 'Tipo', 'Par_ID'] + [f'P{i+1}' for i in range(14)] + ['Empates', 'L', 'E', 'V']
             writer.writerow(header)
             
-            # Datos de cada quiniela
             for quiniela in portafolio:
+                # CORRECCIÓN CLAVE: Convertir la cadena de resultados a una lista
+                resultados_lista = list(quiniela['resultados'])
+
                 row = [
-                    quiniela['id'],
-                    quiniela['tipo'],
+                    quiniela.get('id', ''),
+                    quiniela.get('tipo', ''),
                     quiniela.get('par_id', ''),
-                ] + quiniela['resultados'] + [
-                    quiniela['empates'],
-                    quiniela['distribución']['L'],
-                    quiniela['distribución']['E'],
-                    quiniela['distribución']['V']
+                ] + resultados_lista + [
+                    quiniela.get('empates', ''),
+                    quiniela.get('distribución', {}).get('L', ''),
+                    quiniela.get('distribución', {}).get('E', ''),
+                    quiniela.get('distribución', {}).get('V', '')
                 ]
                 writer.writerow(row)
         
@@ -112,23 +105,16 @@ class PortfolioExporter:
         """
         archivo = self.directorio_salida / f"progol_completo{concurso_str}_{timestamp}.json"
         
-        # Preparar datos serializables
         datos_json = {
             "metadata": {
                 "timestamp": timestamp,
                 "concurso_id": concurso_str.replace("_", ""),
                 "version": "1.0.0",
-                "metodologia": "Definitiva Progol - Implementación Exacta"
+                "metodologia": "Definitiva Progol - Implementación Robusta"
             },
             "portafolio": portafolio,
             "partidos": partidos,
             "metricas": metricas,
-            "resumen": {
-                "total_quinielas": len(portafolio),
-                "cores": len([q for q in portafolio if q["tipo"] == "Core"]),
-                "satelites": len([q for q in portafolio if q["tipo"] == "Satelite"]),
-                "total_partidos": len(partidos)
-            }
         }
         
         with open(archivo, 'w', encoding='utf-8') as f:
@@ -147,60 +133,26 @@ class PortfolioExporter:
         with open(archivo, 'w', encoding='utf-8') as f:
             f.write("="*80 + "\n")
             f.write("PROGOL OPTIMIZER - REPORTE DE OPTIMIZACIÓN\n")
-            f.write("Metodología Definitiva - Implementación Exacta\n")
+            f.write("Metodología Definitiva - Implementación Robusta\n")
             f.write("="*80 + "\n\n")
             
-            f.write(f"Fecha de generación: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Concurso ID: {concurso_str.replace('_', '') or 'No especificado'}\n\n")
+            f.write(f"Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Concurso ID: {concurso_str.replace('_', '') or 'N/A'}\n\n")
             
-            # Resumen de partidos
-            f.write("RESUMEN DE PARTIDOS:\n")
-            f.write("-" * 40 + "\n")
-            
-            clasificaciones = {}
-            for partido in partidos:
-                clase = partido.get("clasificacion", "Sin clasificar")
-                clasificaciones[clase] = clasificaciones.get(clase, 0) + 1
-            
-            for clase, count in clasificaciones.items():
-                f.write(f"  {clase}: {count} partidos\n")
-            
-            f.write(f"\nTotal partidos: {len(partidos)}\n\n")
-            
-            # Resumen del portafolio
-            f.write("RESUMEN DEL PORTAFOLIO:\n")
-            f.write("-" * 40 + "\n")
-            f.write(f"Total quinielas: {len(portafolio)}\n")
-            f.write(f"Quinielas Core: {len([q for q in portafolio if q['tipo'] == 'Core'])}\n")
-            f.write(f"Quinielas Satélite: {len([q for q in portafolio if q['tipo'] == 'Satelite'])}\n\n")
-            
-            # Distribución global
             if "distribucion_global" in metricas:
                 dist = metricas["distribucion_global"]["porcentajes"]
-                f.write("DISTRIBUCIÓN GLOBAL:\n")
-                f.write("-" * 40 + "\n")
-                f.write(f"  Locales (L): {dist['L']:.1%}\n")
-                f.write(f"  Empates (E): {dist['E']:.1%}\n")
-                f.write(f"  Visitantes (V): {dist['V']:.1%}\n\n")
-            
-            # Lista de partidos
-            f.write("DETALLE DE PARTIDOS:\n")
-            f.write("-" * 40 + "\n")
-            for i, partido in enumerate(partidos, 1):
-                f.write(f"{i:2d}. {partido['home']} vs {partido['away']}\n")
-                f.write(f"     Liga: {partido['liga']}\n")
-                f.write(f"     Probabilidades: L={partido['prob_local']:.3f}, "
-                       f"E={partido['prob_empate']:.3f}, V={partido['prob_visitante']:.3f}\n")
-                f.write(f"     Clasificación: {partido.get('clasificacion', 'N/A')}\n\n")
-            
-            # Lista de quinielas
+                f.write("DISTRIBUCIÓN GLOBAL DEL PORTAFOLIO:\n")
+                f.write(f"  Locales (L): {dist.get('L', 0):.1%}\n")
+                f.write(f"  Empates (E): {dist.get('E', 0):.1%}\n")
+                f.write(f"  Visitantes (V): {dist.get('V', 0):.1%}\n\n")
+
             f.write("QUINIELAS GENERADAS:\n")
             f.write("-" * 40 + "\n")
             
-            for quiniela in portafolio:
-                f.write(f"{quiniela['id']} ({quiniela['tipo']}): ")
-                f.write("".join(quiniela['resultados']))
-                f.write(f" [Empates: {quiniela['empates']}]\n")
+            for q in portafolio:
+                f.write(f"{q.get('id', 'N/A'):<15} ({q.get('tipo', 'N/A'):<8}): ")
+                f.write("".join(q.get('resultados', '')))
+                f.write(f" [Empates: {q.get('empates', 'N/A')}]\n")
         
         self.logger.debug(f"Reporte de texto exportado: {archivo}")
         return str(archivo)
@@ -212,22 +164,14 @@ class PortfolioExporter:
         archivo = self.directorio_salida / f"partidos{concurso_str}_{timestamp}.csv"
         
         with open(archivo, 'w', newline='', encoding='utf-8') as f:
-            if not partidos:
-                return str(archivo)
+            if not partidos: return str(archivo)
             
-            # Usar todas las claves del primer partido como header
-            fieldnames = partidos[0].keys()
+            fieldnames = list(partidos[0].keys())
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             
             writer.writeheader()
             for partido in partidos:
-                # Convertir valores no serializables
-                row = {}
-                for key, value in partido.items():
-                    if isinstance(value, (int, float, str, bool)):
-                        row[key] = value
-                    else:
-                        row[key] = str(value)
+                row = {k: str(v) for k, v in partido.items()}
                 writer.writerow(row)
         
         self.logger.debug(f"CSV partidos exportado: {archivo}")
@@ -240,37 +184,12 @@ class PortfolioExporter:
         archivo = self.directorio_salida / f"configuracion{concurso_str}_{timestamp}.json"
         
         try:
-            from progol_optimizer.config.constants import PROGOL_CONFIG
-            
+            from config.constants import PROGOL_CONFIG
             with open(archivo, 'w', encoding='utf-8') as f:
                 json.dump(PROGOL_CONFIG, f, indent=2, ensure_ascii=False)
-            
             self.logger.debug(f"Configuración exportada: {archivo}")
-            
         except Exception as e:
             self.logger.warning(f"No se pudo exportar configuración: {e}")
             return ""
         
-        return str(archivo)
-    
-    def exportar_quinielas_simples(self, portafolio: List[Dict[str, Any]], archivo_nombre: str = None) -> str:
-        """
-        Exporta solo las quinielas en formato simple para impresión rápida
-        """
-        if archivo_nombre is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            archivo_nombre = f"quinielas_simples_{timestamp}.txt"
-        
-        archivo = self.directorio_salida / archivo_nombre
-        
-        with open(archivo, 'w', encoding='utf-8') as f:
-            f.write("QUINIELAS PROGOL - FORMATO SIMPLE\n")
-            f.write("=" * 50 + "\n\n")
-            
-            for quiniela in portafolio:
-                f.write(f"{quiniela['id']:8s}: ")
-                f.write("".join(quiniela['resultados']))
-                f.write(f" (E:{quiniela['empates']})\n")
-        
-        self.logger.info(f"Quinielas simples exportadas: {archivo}")
         return str(archivo)
