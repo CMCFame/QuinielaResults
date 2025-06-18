@@ -73,7 +73,7 @@ class ProgolOptimizer:
             self.logger.info("PASO 3: Aplicando calibración bayesiana global con regularización...")
             partidos_calibrados = self.calibrator.calibrar_concurso_completo(partidos)
             
-            # Aplicar clasificación después de calibración
+            # Aplicar clasificación DESPUÉS de la calibración final
             partidos_procesados = []
             for i, partido_calibrado in enumerate(partidos_calibrados):
                 clasificacion = self.classifier.clasificar_partido(partido_calibrado)
@@ -85,16 +85,7 @@ class ProgolOptimizer:
                 }
                 partidos_procesados.append(partido_final)
             
-            # NUEVO: Mostrar estadísticas de clasificación para debug
             stats_clasificacion = self.classifier.obtener_estadisticas_clasificacion(partidos_procesados)
-            
-            # NUEVO: Generar diagnóstico si hay pocos Anclas
-            num_anclas = stats_clasificacion["distribución"].get("Ancla", 0)
-            if num_anclas == 0:
-                diagnostico = self.classifier.diagnosticar_clasificacion(partidos_procesados)
-                self.logger.warning("📋 DIAGNÓSTICO DETALLADO DE CLASIFICACIÓN:")
-                for linea in diagnostico.split('\n'):
-                    self.logger.warning(linea)
             
             # PASO 4: Generar quinielas Core
             self.logger.info("PASO 4: Generando 4 quinielas Core...")
@@ -119,13 +110,8 @@ class ProgolOptimizer:
                 portafolio_optimizado
             )
             
-            # NUEVO: Log detallado de validación
-            es_valido = resultado_validacion["es_valido"]
-            validaciones = resultado_validacion["detalle_validaciones"]
-            self.logger.info(f"📊 RESULTADO VALIDACIÓN: {'✅ VÁLIDO' if es_valido else '❌ INVÁLIDO'}")
-            for regla, cumple in validaciones.items():
-                estado = "✅" if cumple else "❌"
-                self.logger.info(f"  {estado} {regla}")
+            es_valido_final = resultado_validacion["es_valido"]
+            self.logger.info(f"📊 RESULTADO VALIDACIÓN FINAL: {'✅ VÁLIDO' if es_valido_final else '❌ INVÁLIDO'}")
             
             # PASO 8: Exportar resultados
             self.logger.info("PASO 8: Exportando resultados...")
@@ -148,53 +134,35 @@ class ProgolOptimizer:
                 "concurso_id": concurso_id
             }
             
-            # NUEVO: Resumen final detallado
-            metricas = resultado_validacion["metricas"]
-            dist = metricas["distribucion_global"]["porcentajes"]
-            
             self.logger.info(f"✅ CONCURSO {concurso_id} PROCESADO EXITOSAMENTE")
-            self.logger.info(f"   → {len(portafolio_optimizado)} quinielas generadas")
-            self.logger.info(f"   → Validación: {'✅ VÁLIDO' if es_valido else '❌ INVÁLIDO'}")
-            self.logger.info(f"   → Distribución: L={dist['L']:.1%}, E={dist['E']:.1%}, V={dist['V']:.1%}")
-            self.logger.info(f"   → Clasificación: {stats_clasificacion['distribución']}")
-            self.logger.info(f"   → {len(archivos_exportados)} archivos exportados")
-            
             return resultado
             
         except Exception as e:
-            self.logger.error(f"❌ Error procesando concurso: {e}")
+            self.logger.error(f"❌ Error procesando concurso: {e}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e),
                 "concurso_id": concurso_id
             }
 
-
 def main():
     """Función principal para uso por línea de comandos"""
     import argparse
-    
     parser = argparse.ArgumentParser(description="Progol Optimizer - Metodología Definitiva")
     parser.add_argument("--archivo", "-f", help="Archivo CSV con datos de partidos")
     parser.add_argument("--concurso", "-c", default="2283", help="ID del concurso")
     parser.add_argument("--debug", "-d", action="store_true", help="Modo debug")
-    
     args = parser.parse_args()
-    
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
-    
-    # Ejecutar optimización
     optimizer = ProgolOptimizer()
     resultado = optimizer.procesar_concurso(args.archivo, args.concurso)
-    
     if resultado["success"]:
         print(f"✅ Optimización exitosa para concurso {args.concurso}")
         print(f"   Archivos generados en: outputs/")
     else:
         print(f"❌ Error: {resultado['error']}")
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
