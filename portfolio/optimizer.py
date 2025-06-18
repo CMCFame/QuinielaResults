@@ -29,6 +29,14 @@ class GRASPAnnealing:
         
         from validation.portfolio_validator import PortfolioValidator
         self.validator = PortfolioValidator()
+        
+        # NUEVO: Intentar cargar asistente AI
+        try:
+            from models.ai_assistant import ProgolAIAssistant
+            self.ai_assistant = ProgolAIAssistant()
+        except:
+            self.ai_assistant = None
+            self.logger.debug("Asistente AI no disponible")
 
     def _resultado_a_clave(self, resultado: str) -> str:
         mapeo = {"L": "local", "E": "empate", "V": "visitante"}

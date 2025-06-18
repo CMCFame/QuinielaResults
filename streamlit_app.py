@@ -117,6 +117,63 @@ class ProgolStreamlitApp:
                 help="Mostrar información detallada de debug"
             )
 
+            # NUEVA SECCIÓN AI
+            st.markdown("---")
+            st.subheader("🤖 Configuración AI")
+
+            # Verificar si hay API key en secrets
+            if "OPENAI_API_KEY" in st.secrets:
+                # API key está en secrets
+                os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+                st.success("✅ AI habilitada (API key desde secrets)")
+                st.caption("La clave API está configurada de forma segura")
+                
+                # Opción para usar una clave diferente temporalmente
+                with st.expander("Usar API key diferente (opcional)"):
+                    temp_key = st.text_input(
+                        "API Key temporal",
+                        type="password",
+                        help="Solo si quieres usar una clave diferente para esta sesión"
+                    )
+                    if temp_key:
+                        os.environ["OPENAI_API_KEY"] = temp_key
+                        st.session_state.openai_api_key = temp_key
+                        st.info("Usando API key temporal para esta sesión")
+            else:
+                # No hay API key en secrets, permitir ingreso manual
+                st.warning("⚠️ No se encontró API key en configuración")
+                
+                api_key = st.text_input(
+                    "OpenAI API Key",
+                    type="password",
+                    help="Ingresa tu API key de OpenAI para habilitar corrección inteligente",
+                    key="openai_api_key"
+                )
+                
+                if api_key:
+                    os.environ["OPENAI_API_KEY"] = api_key
+                    st.success("✅ API Key configurada para esta sesión")
+                else:
+                    st.info("ℹ️ AI deshabilitada - Configura la API key en secrets o ingrésala arriba")
+                    
+                # Instrucciones para configurar en secrets
+                with st.expander("📖 Cómo configurar API key permanentemente"):
+                    st.markdown("""
+                    **Para Streamlit Cloud:**
+                    1. Ve a tu app en [share.streamlit.io](https://share.streamlit.io)
+                    2. Click en ⚙️ Settings → Secrets
+                    3. Agrega:
+                    ```toml
+                    OPENAI_API_KEY = "sk-tu-api-key-aqui"
+                    ```
+                    4. Click en "Save" y la app se reiniciará
+                    
+                    **Para desarrollo local:**
+                    1. Crea `.streamlit/secrets.toml` en la raíz del proyecto
+                    2. Agrega la misma línea de arriba
+                    3. Asegúrate de que `.streamlit/secrets.toml` esté en `.gitignore`
+                    """)
+
             # Mostrar configuración actual
             if st.expander("Ver Configuración Actual"):
                 st.json(PROGOL_CONFIG)
@@ -330,6 +387,13 @@ class ProgolStreamlitApp:
 
     def ejecutar_optimizacion_directo(self, optimizer, progress_callback=None):
         """Ejecutar optimización usando datos ya cargados"""
+        
+        # Configurar API key si está disponible
+        if "OPENAI_API_KEY" in st.secrets:
+            os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+        elif hasattr(st.session_state, 'openai_api_key') and st.session_state.openai_api_key:
+            os.environ["OPENAI_API_KEY"] = st.session_state.openai_api_key
+        
         # Obtener datos de session_state
         datos_partidos = st.session_state.datos_partidos
 
@@ -338,8 +402,7 @@ class ProgolStreamlitApp:
         if not es_valido:
             raise ValueError(f"Datos inválidos: {errores}")
 
-        # PASO 2: Clasificación y calibración - CORREGIDO CON CALIBRACIÓN GLOBAL
-        # NUEVO: Usar calibración global en lugar de individual
+        # PASO 2: Clasificación y calibración
         partidos_calibrados = optimizer.calibrator.calibrar_concurso_completo(datos_partidos)
 
         # Aplicar clasificación después de calibración
@@ -387,8 +450,10 @@ class ProgolStreamlitApp:
             "validacion": resultado_validacion,
             "metricas": resultado_validacion["metricas"],
             "archivos_exportados": archivos_exportados,
-            "concurso_id": st.session_state.concurso_id
+            "concurso_id": st.session_state.concurso_id,
+            "ai_disponible": hasattr(optimizer, 'ai_assistant') and optimizer.ai_assistant.enabled
         }
+
 
     def mostrar_resumen_resultado(self, resultado):
         """Mostrar resumen inmediato del resultado"""
@@ -781,7 +846,61 @@ class ProgolStreamlitApp:
         # Métricas detalladas
         st.subheader("Métricas Detalladas")
         st.json(validacion["metricas"])
+        ai_disponible = False
+        if "OPENAI_API_KEY" in st.secrets:
+            ai_disponible = True
+        elif hasattr(st.session_state, 'openai_api_key') and st.session_state.openai_api_key:
+            ai_disponible = True
 
+        if ai_disponible:
+            st.markdown("---")
+            st.subheader("🤖 Análisis Inteligente del Portafolio")
+            
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                st.info("La AI puede analizar tu portafolio y sugerir mejoras específicas")
+            
+            with col2:
+                if st.button("🔍 Analizar con AI", type="primary", use_container_width=True):
+                    with st.spinner("Analizando con AI..."):
+                        try:
+                            from models.ai_assistant import ProgolAIAssistant
+                            ai_assistant = ProgolAIAssistant()  # No necesita API key, la toma de env/secrets
+                            
+                            if ai_assistant.enabled:
+                                analisis = ai_assistant.validar_y_explicar_portafolio(
+                                    resultado["portafolio"], 
+                                    resultado["partidos"]
+                                )
+                                
+                                # Mostrar análisis
+                                if analisis["valido"]:
+                                    st.success("✅ El portafolio es válido según la metodología")
+                                else:
+                                    st.error("❌ El portafolio tiene problemas de validación")
+                                
+                                # Mostrar explicación detallada
+                                st.markdown("**Análisis Detallado:**")
+                                st.markdown(analisis["explicacion"])
+                                
+                                # Botón para solicitar optimización AI
+                                if not analisis["valido"]:
+                                    if st.button("🔧 Aplicar Corrección AI"):
+                                        with st.spinner("Aplicando correcciones con AI..."):
+                                            # Re-ejecutar optimización con AI activa
+                                            st.info("Re-ejecutando optimización con asistencia AI...")
+                                            # Aquí podrías llamar nuevamente a ejecutar_optimizacion()
+                                            st.rerun()
+                            else:
+                                st.warning("AI no pudo inicializarse correctamente")
+                                
+                        except Exception as e:
+                            st.error(f"Error en análisis AI: {e}")
+                            if st.session_state.debug_mode:
+                                st.exception(e)
+        else:
+            st.info("💡 Para habilitar análisis con AI, configura tu API key de OpenAI en el sidebar")
 def main():
     """Función principal para ejecutar la app"""
     app = ProgolStreamlitApp()

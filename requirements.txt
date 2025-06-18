@@ -1,4 +1,4 @@
-# requirements.txt - Progol Optimizer v2.0 Optimizado
+# requirements.txt - Progol Optimizer v2.0 con AI
 # Dependencias core (originales)
 streamlit>=1.28.0
 pandas>=1.5.0
@@ -10,6 +10,9 @@ scipy>=1.10.0
 numba>=0.58.0              # JIT compilation para 5x velocidad
 PyPDF2>=3.0.0              # Parser PDF de previas (método principal)
 pdfplumber>=0.9.0          # Parser PDF alternativo (fallback)
+
+# NUEVA dependencia para AI
+openai>=1.0.0              # API de OpenAI para asistente inteligente
 
 # Dependencias opcionales (instalar si están disponibles)
 # Si no están disponibles, el sistema usa fallbacks automáticamente
