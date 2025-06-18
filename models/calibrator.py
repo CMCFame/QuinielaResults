@@ -1,8 +1,7 @@
-# progol_optimizer/models/calibrator.py
+# progol_optimizer/models/calibrator.py - VERSIÓN MEJORADA
 """
-Calibrador Bayesiano - VERSIÓN CORREGIDA CON REGULARIZACIÓN AGRESIVA
-Fórmula: p_final = p_raw * (1 + k1*ΔForma + k2*Lesiones + k3*Contexto) / Z
-CORRECCIÓN CRÍTICA: Regularización agresiva hacia distribución histórica 38%L, 29%E, 33%V
+Calibrador Bayesiano MEJORADO - Regularización más agresiva y mejor control de distribución
+CORRECCIÓN: Control más estricto de la distribución histórica y mejor balance L/E/V
 """
 
 import logging
@@ -11,8 +10,8 @@ from typing import Dict, Any, List
 
 class BayesianCalibrator:
     """
-    Implementa la calibración bayesiana exacta y la regularización global.
-    CORREGIDO: Regularización agresiva para forzar distribución histórica
+    Implementa la calibración bayesiana exacta y la regularización global mejorada.
+    MEJORADO: Control más estricto de distribución histórica y mejor diversidad
     """
     
     def __init__(self):
@@ -23,30 +22,39 @@ class BayesianCalibrator:
         self.k2 = self.config["CALIBRACION_COEFICIENTES"]["k2_lesiones"]
         self.k3 = self.config["CALIBRACION_COEFICIENTES"]["k3_contexto"]
         self.distribucion_historica = self.config["DISTRIBUCION_HISTORICA"]
-        self.logger.debug(f"Coeficientes bayesianos: k1={self.k1}, k2={self.k2}, k3={self.k3}")
+        self.rangos_historicos = self.config["RANGOS_HISTORICOS"]
+        self.logger.debug(f"Calibrador MEJORADO inicializado: k1={self.k1}, k2={self.k2}, k3={self.k3}")
 
     def calibrar_concurso_completo(self, partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        NUEVA FUNCIÓN: Calibra todos los partidos y luego aplica regularización global.
-        Garantiza que la distribución final del concurso respete los priors históricos.
+        VERSIÓN MEJORADA: Calibra y regulariza con control más estricto de distribución
         """
-        self.logger.info("Iniciando calibración completa del concurso...")
+        self.logger.info("Iniciando calibración completa MEJORADA del concurso...")
         
-        # PASO 1: Calibración bayesiana individual de cada partido
-        partidos_calibrados_individualmente = [self.aplicar_calibracion_bayesiana(p) for p in partidos]
+        if len(partidos) != 14:
+            raise ValueError(f"Se requieren exactamente 14 partidos, recibidos: {len(partidos)}")
         
-        # PASO 2: Regularización global para ajustar la suma total de probabilidades
-        partidos_regularizados = self._aplicar_regularizacion_agresiva(partidos_calibrados_individualmente)
+        # PASO 1: Calibración bayesiana individual
+        partidos_calibrados = [self.aplicar_calibracion_bayesiana(p) for p in partidos]
         
-        distribucion_final = self._calcular_distribucion_total(partidos_regularizados)
-        self.logger.info(f"Distribución final tras regularización: L={distribucion_final['L']:.3f}, " +
+        # PASO 2: Regularización agresiva hacia distribución histórica
+        partidos_regularizados = self._aplicar_regularizacion_mejorada(partidos_calibrados)
+        
+        # PASO 3: Verificación y ajuste fino
+        partidos_finales = self._ajuste_fino_distribución(partidos_regularizados)
+        
+        # Validar resultado final
+        distribucion_final = self._calcular_distribucion_total(partidos_finales)
+        self._validar_distribucion_final(distribucion_final)
+        
+        self.logger.info(f"✅ Calibración completada: L={distribucion_final['L']:.3f}, " +
                        f"E={distribucion_final['E']:.3f}, V={distribucion_final['V']:.3f}")
         
-        return partidos_regularizados
+        return partidos_finales
 
     def aplicar_calibracion_bayesiana(self, partido: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Implementa la fórmula de la página 3 del documento.
+        Implementa la fórmula de la página 3 del documento (sin cambios)
         """
         p_local_raw = partido["prob_local"]
         p_empate_raw = partido["prob_empate"]
@@ -87,35 +95,48 @@ class BayesianCalibrator:
             "prob_local": p_local_ajustado / Z,
             "prob_empate": p_empate_ajustado / Z,
             "prob_visitante": p_visitante_ajustado / Z,
-            "prob_local_raw": p_local_raw, "prob_empate_raw": p_empate_raw, "prob_visitante_raw": p_visitante_raw,
-            "factor_ajuste": factor_ajuste, "Z_normalizacion": Z
+            "prob_local_raw": p_local_raw, 
+            "prob_empate_raw": p_empate_raw, 
+            "prob_visitante_raw": p_visitante_raw,
+            "factor_ajuste": factor_ajuste, 
+            "Z_normalizacion": Z
         })
         return partido_calibrado
 
-    def _aplicar_regularizacion_agresiva(self, partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _aplicar_regularizacion_mejorada(self, partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Aplica regularización para forzar la suma de probabilidades del concurso
-        a alinearse con la distribución histórica.
+        VERSIÓN MEJORADA: Regularización más estricta hacia distribución histórica
         """
-        self.logger.info("Aplicando regularización agresiva hacia distribución histórica...")
+        self.logger.info("Aplicando regularización MEJORADA hacia distribución histórica...")
         
-        # Targets históricos para 14 partidos
-        target_local_sum = 14 * self.distribucion_historica["L"]      # ~5.32
-        target_empate_sum = 14 * self.distribucion_historica["E"]     # ~4.06
-        target_visitante_sum = 14 * self.distribucion_historica["V"]  # ~4.62
+        # Targets históricos para 14 partidos (punto medio de los rangos)
+        target_local_sum = 14 * 0.38      # 5.32
+        target_empate_sum = 14 * 0.29     # 4.06
+        target_visitante_sum = 14 * 0.33  # 4.62
         
-        # Sumas actuales
+        # Calcular diferencias actuales
         actual_local_sum = sum(p["prob_local"] for p in partidos)
         actual_empate_sum = sum(p["prob_empate"] for p in partidos)
         actual_visitante_sum = sum(p["prob_visitante"] for p in partidos)
         
-        # Factores de corrección
+        self.logger.debug(f"Antes regularización: L={actual_local_sum:.3f}, E={actual_empate_sum:.3f}, V={actual_visitante_sum:.3f}")
+        self.logger.debug(f"Targets objetivo: L={target_local_sum:.3f}, E={target_empate_sum:.3f}, V={target_visitante_sum:.3f}")
+        
+        # Factores de corrección más agresivos
         factor_local = target_local_sum / max(actual_local_sum, 0.1)
         factor_empate = target_empate_sum / max(actual_empate_sum, 0.1)
         factor_visitante = target_visitante_sum / max(actual_visitante_sum, 0.1)
         
+        # Aplicar corrección con smoothing para evitar cambios extremos
+        smoothing = 0.7  # Factor de suavizado
+        factor_local = 1.0 + smoothing * (factor_local - 1.0)
+        factor_empate = 1.0 + smoothing * (factor_empate - 1.0)
+        factor_visitante = 1.0 + smoothing * (factor_visitante - 1.0)
+        
+        self.logger.debug(f"Factores de corrección: L={factor_local:.3f}, E={factor_empate:.3f}, V={factor_visitante:.3f}")
+        
         partidos_corregidos = []
-        for partido in partidos:
+        for i, partido in enumerate(partidos):
             p_local_corregido = partido["prob_local"] * factor_local
             p_empate_corregido = partido["prob_empate"] * factor_empate
             p_visitante_corregido = partido["prob_visitante"] * factor_visitante
@@ -124,16 +145,110 @@ class BayesianCalibrator:
             total_corregido = p_local_corregido + p_empate_corregido + p_visitante_corregido
             if total_corregido == 0: total_corregido = 1
 
+            # Aplicar límites mínimos para evitar probabilidades demasiado bajas
+            p_local_final = max(0.05, p_local_corregido / total_corregido)
+            p_empate_final = max(0.05, p_empate_corregido / total_corregido)
+            p_visitante_final = max(0.05, p_visitante_corregido / total_corregido)
+            
+            # Re-normalizar después de aplicar límites
+            total_final = p_local_final + p_empate_final + p_visitante_final
+            
             partido_corregido = partido.copy()
             partido_corregido.update({
-                "prob_local": p_local_corregido / total_corregido,
-                "prob_empate": p_empate_corregido / total_corregido,
-                "prob_visitante": p_visitante_corregido / total_corregido,
-                "regularizado": True
+                "prob_local": p_local_final / total_final,
+                "prob_empate": p_empate_final / total_final,
+                "prob_visitante": p_visitante_final / total_final,
+                "regularizado": True,
+                "factor_local_aplicado": factor_local,
+                "factor_empate_aplicado": factor_empate,
+                "factor_visitante_aplicado": factor_visitante
             })
             partidos_corregidos.append(partido_corregido)
         
         return partidos_corregidos
+
+    def _ajuste_fino_distribución(self, partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        NUEVO: Ajuste fino para asegurar que estamos dentro de los rangos históricos exactos
+        """
+        self.logger.info("Aplicando ajuste fino de distribución...")
+        
+        partidos_ajustados = partidos.copy()
+        max_iteraciones = 10
+        
+        for iteracion in range(max_iteraciones):
+            distribucion = self._calcular_distribucion_total(partidos_ajustados)
+            
+            # Verificar si estamos en rangos válidos
+            if self._esta_en_rangos_historicos(distribucion):
+                self.logger.debug(f"✅ Distribución en rangos correctos en iteración {iteracion}")
+                break
+            
+            # Aplicar correcciones específicas
+            partidos_ajustados = self._corregir_fuera_de_rangos(partidos_ajustados, distribucion)
+            
+        return partidos_ajustados
+
+    def _esta_en_rangos_historicos(self, distribucion: Dict[str, float]) -> bool:
+        """Verifica si la distribución está en los rangos históricos válidos"""
+        sum_L = distribucion["L"]
+        sum_E = distribucion["E"]
+        sum_V = distribucion["V"]
+        
+        # Rangos para 14 partidos
+        rango_L = [14 * self.rangos_historicos["L"][0], 14 * self.rangos_historicos["L"][1]]
+        rango_E = [14 * self.rangos_historicos["E"][0], 14 * self.rangos_historicos["E"][1]]
+        rango_V = [14 * self.rangos_historicos["V"][0], 14 * self.rangos_historicos["V"][1]]
+        
+        return (rango_L[0] <= sum_L <= rango_L[1] and 
+                rango_E[0] <= sum_E <= rango_E[1] and 
+                rango_V[0] <= sum_V <= rango_V[1])
+
+    def _corregir_fuera_de_rangos(self, partidos: List[Dict[str, Any]], distribucion: Dict[str, float]) -> List[Dict[str, Any]]:
+        """Corrige distribuciones que están fuera de rangos históricos"""
+        partidos_corregidos = []
+        
+        # Calcular qué tan fuera de rango estamos
+        sum_L, sum_E, sum_V = distribucion["L"], distribucion["E"], distribucion["V"]
+        
+        target_L = 14 * 0.38
+        target_E = 14 * 0.29
+        target_V = 14 * 0.33
+        
+        # Calcular ajustes necesarios
+        ajuste_L = (target_L - sum_L) / 14  # Ajuste por partido
+        ajuste_E = (target_E - sum_E) / 14
+        ajuste_V = (target_V - sum_V) / 14
+        
+        for partido in partidos:
+            # Aplicar micro-ajustes
+            nuevo_local = max(0.05, partido["prob_local"] + ajuste_L * 0.1)
+            nuevo_empate = max(0.05, partido["prob_empate"] + ajuste_E * 0.1)
+            nuevo_visitante = max(0.05, partido["prob_visitante"] + ajuste_V * 0.1)
+            
+            # Normalizar
+            total = nuevo_local + nuevo_empate + nuevo_visitante
+            
+            partido_corregido = partido.copy()
+            partido_corregido.update({
+                "prob_local": nuevo_local / total,
+                "prob_empate": nuevo_empate / total,
+                "prob_visitante": nuevo_visitante / total,
+                "ajuste_fino_aplicado": True
+            })
+            partidos_corregidos.append(partido_corregido)
+        
+        return partidos_corregidos
+
+    def _validar_distribucion_final(self, distribucion: Dict[str, float]):
+        """Valida que la distribución final sea válida"""
+        sum_L, sum_E, sum_V = distribucion["L"], distribucion["E"], distribucion["V"]
+        
+        if not self._esta_en_rangos_historicos(distribucion):
+            self.logger.warning(f"⚠️ Distribución final fuera de rangos históricos:")
+            self.logger.warning(f"  L: {sum_L:.3f} (esperado: {14*self.rangos_historicos['L'][0]:.3f}-{14*self.rangos_historicos['L'][1]:.3f})")
+            self.logger.warning(f"  E: {sum_E:.3f} (esperado: {14*self.rangos_historicos['E'][0]:.3f}-{14*self.rangos_historicos['E'][1]:.3f})")
+            self.logger.warning(f"  V: {sum_V:.3f} (esperado: {14*self.rangos_historicos['V'][0]:.3f}-{14*self.rangos_historicos['V'][1]:.3f})")
 
     def _calcular_distribucion_total(self, partidos: List[Dict[str, Any]]) -> Dict[str, float]:
         """Calcula la suma total de probabilidades del concurso."""
@@ -145,7 +260,7 @@ class BayesianCalibrator:
 
     def _aplicar_draw_propensity(self, p_local, p_empate, p_visitante):
         """
-        Implementa la Draw-Propensity Rule de la página 3.
+        Implementa la Draw-Propensity Rule de la página 3 (sin cambios)
         """
         umbral_diff = self.config["DRAW_PROPENSITY"]["umbral_diferencia"]
         boost_empate = self.config["DRAW_PROPENSITY"]["boost_empate"]

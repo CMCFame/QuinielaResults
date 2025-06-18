@@ -1,9 +1,7 @@
-# progol_optimizer/portfolio/optimizer.py
+# progol_optimizer/portfolio/optimizer.py - CORREGIDO PARA CONCENTRACIÓN
 """
-Optimizador GRASP-Annealing OPTIMIZADO y CORREGIDO
-AHORA VALIDA TODAS LAS REGLAS DURANTE LA OPTIMIZACIÓN
-- Previene que los swaps invaliden el portafolio
-- Añade fase de ajuste final para garantizar distribución global
+Optimizador GRASP-Annealing CORREGIDO
+CORRECCIÓN PRINCIPAL: Arregla la función de ajuste final duplicada y mejora la corrección de concentración
 """
 
 import logging
@@ -40,7 +38,6 @@ class GRASPAnnealing:
         from validation.portfolio_validator import PortfolioValidator
         self.validator = PortfolioValidator()
 
-    # --- NUEVA FUNCIÓN AUXILIAR CORREGIDA ---
     def _resultado_a_clave(self, resultado: str) -> str:
         """Convierte un resultado 'L', 'E', 'V' a su clave de probabilidad."""
         mapeo = {"L": "local", "E": "empate", "V": "visitante"}
@@ -100,7 +97,7 @@ class GRASPAnnealing:
                 break
         
         self.logger.info("Fase final: Ajustando distribución global del portafolio...")
-        mejor_portafolio = self._ajuste_final_del_portafolio(mejor_portafolio, partidos)
+        mejor_portafolio = self._ajuste_final_del_portafolio_corregido(mejor_portafolio, partidos)
 
         score_final = self._calcular_objetivo_f_optimizado(mejor_portafolio, partidos)
         self.logger.info(f"✅ Optimización completada: F={score_final:.6f}")
@@ -169,155 +166,173 @@ class GRASPAnnealing:
         
         return True
 
-# Dentro de la clase GRASPAnnealing en portfolio/optimizer.py
-
-    def _ajuste_final_del_portafolio(self, portafolio: List[Dict[str, Any]], partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _ajuste_final_del_portafolio_corregido(self, portafolio: List[Dict[str, Any]], partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        FASE FINAL DE AJUSTE:
-        1. Corrige la distribución GLOBAL de L/E/V del portafolio.
-        2. Corrige la distribución POR POSICIÓN (diversidad de divisores).
+        VERSIÓN CORREGIDA: Ajuste final que corrige concentración Y distribución por posición
         """
-        self.logger.info("Iniciando fase de ajuste final del portafolio (Global y por Posición)...")
+        self.logger.info("Iniciando ajuste final CORREGIDO del portafolio...")
         portafolio_ajustado = [q.copy() for q in portafolio]
 
-        # --- BUCLE 1: AJUSTE GLOBAL ---
-        for _ in range(30): # Máximo 30 intentos de ajuste global
-            if self.validator._validar_rangos_historicos(portafolio_ajustado):
-                self.logger.info("✅ Ajuste de distribución global completado.")
-                break
-            # (Aquí va la lógica de ajuste global que ya tenías, la he integrado)
-            # ...
-        else:
-            self.logger.warning("⚠️ No se pudo ajustar completamente la distribución global.")
-
-        # --- BUCLE 2: AJUSTE DE DIVERSIDAD POR POSICIÓN ---
-        for _ in range(50): # Máximo 50 intentos de ajuste de diversidad
-            if self.validator._validar_distribucion_equilibrada(portafolio_ajustado):
-                self.logger.info("✅ Ajuste de diversidad por posición completado.")
-                break
-
-            # Encontrar la peor violacion
-            peor_violacion = None
-            max_desequilibrio = 0
-
-            for posicion in range(14):
-                conteos = {"L": 0, "E": 0, "V": 0}
-                for q in portafolio_ajustado:
-                    conteos[q["resultados"][posicion]] += 1
+        # --- PASO 1: CORREGIR CONCENTRACIÓN EN QUINIELAS INDIVIDUALES ---
+        self.logger.info("Paso 1: Corrigiendo concentración individual...")
+        for i, quiniela in enumerate(portafolio_ajustado):
+            if quiniela["tipo"] == "Core":  # No tocar las Core
+                continue
                 
-                max_apariciones = len(portafolio_ajustado) * 0.67
-                for signo, count in conteos.items():
-                    if count > max_apariciones and count > max_desequilibrio:
-                        max_desequilibrio = count
-                        peor_violacion = (posicion, signo, "alto")
-
-            if not peor_violacion: break # No hay más violaciones que corregir
-
-            pos, signo_exceso, _ = peor_violacion
+            resultados = quiniela["resultados"].copy()
             
-            # Intentar corregir la peor violacion
-            # Buscar una quiniela que tenga el 'signo_exceso' en la 'pos' y cambiarlo
-            candidatos_cambio = []
-            for i, q in enumerate(portafolio_ajustado):
-                if q["resultados"][pos] == signo_exceso:
-                    # Evaluar la "calidad" de este pronóstico
-                    prob = partidos[pos][f"prob_{self._resultado_a_clave(signo_exceso)}"]
-                    candidatos_cambio.append((i, prob))
-            
-            # Ordenar por probabilidad (cambiar el menos probable)
-            candidatos_cambio.sort(key=lambda x: x[1])
+            # Verificar concentración general
+            if self._tiene_concentracion_excesiva(resultados):
+                self.logger.debug(f"Corrigiendo concentración en {quiniela['id']}")
+                resultados_corregidos = self._corregir_concentracion_quiniela(resultados, partidos)
+                
+                # Actualizar quiniela
+                portafolio_ajustado[i]["resultados"] = resultados_corregidos
+                portafolio_ajustado[i]["empates"] = resultados_corregidos.count("E")
+                portafolio_ajustado[i]["distribución"] = {
+                    "L": resultados_corregidos.count("L"),
+                    "E": resultados_corregidos.count("E"),
+                    "V": resultados_corregidos.count("V")
+                }
 
-            corregido = False
-            for q_idx, _ in candidatos_cambio:
-                opciones = [s for s in ["L", "E", "V"] if s != signo_exceso]
-                # Intentar cambiar a cada una de las otras dos opciones
-                for nuevo_res in opciones:
-                    resultados_simulados = portafolio_ajustado[q_idx]["resultados"].copy()
-                    resultados_simulados[pos] = nuevo_res
-                    if self._es_movimiento_valido(portafolio_ajustado, q_idx, resultados_simulados):
-                        portafolio_ajustado[q_idx]["resultados"] = resultados_simulados
-                        corregido = True
-                        break
-                if corregido: break
+        # --- PASO 2: CORREGIR DISTRIBUCIÓN POR POSICIÓN ---
+        self.logger.info("Paso 2: Corrigiendo distribución por posición...")
+        for intento in range(100):  # Máximo 100 intentos
+            if self.validator._validar_distribucion_equilibrada(portafolio_ajustado):
+                self.logger.info("✅ Distribución por posición corregida")
+                break
+                
+            # Encontrar la peor violación
+            peor_posicion, peor_signo = self._encontrar_peor_desequilibrio(portafolio_ajustado)
+            
+            if peor_posicion is None:
+                break
+                
+            # Corregir la violación
+            if self._corregir_desequilibrio_posicion(portafolio_ajustado, peor_posicion, peor_signo, partidos):
+                self.logger.debug(f"Corregido desequilibrio en posición {peor_posicion+1}, signo {peor_signo}")
+            else:
+                # Si no se puede corregir, salir del bucle
+                break
         else:
-            self.logger.warning("⚠️ No se pudo ajustar completamente la diversidad por posición.")
+            self.logger.warning("⚠️ No se pudo corregir completamente la distribución por posición")
 
         return portafolio_ajustado
 
-    # Dentro de la clase GRASPAnnealing en portfolio/optimizer.py
+    def _tiene_concentracion_excesiva(self, resultados: List[str]) -> bool:
+        """Verifica si una quiniela tiene concentración excesiva"""
+        # Concentración general
+        max_conc_general = max(resultados.count(s) for s in ["L", "E", "V"]) / 14.0
+        if max_conc_general > self.config["CONCENTRACION_MAX_GENERAL"]:
+            return True
+            
+        # Concentración inicial
+        primeros_3 = resultados[:3]
+        max_conc_inicial = max(primeros_3.count(s) for s in ["L", "E", "V"]) / 3.0
+        if max_conc_inicial > self.config["CONCENTRACION_MAX_INICIAL"]:
+            return True
+            
+        return False
 
-    def _ajuste_final_del_portafolio(self, portafolio: List[Dict[str, Any]], partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        FASE FINAL DE AJUSTE:
-        1. Corrige la distribución GLOBAL de L/E/V del portafolio.
-        2. Corrige la distribución POR POSICIÓN (diversidad de divisores).
-        """
-        self.logger.info("Iniciando fase de ajuste final del portafolio (Global y por Posición)...")
-        portafolio_ajustado = [q.copy() for q in portafolio]
-
-        # --- BUCLE 1: AJUSTE GLOBAL ---
-        for _ in range(30): # Máximo 30 intentos de ajuste global
-            if self.validator._validar_rangos_historicos(portafolio_ajustado):
-                self.logger.info("✅ Ajuste de distribución global completado.")
-                break
-            # (Aquí va la lógica de ajuste global que ya tenías, la he integrado)
-            # ...
-        else:
-            self.logger.warning("⚠️ No se pudo ajustar completamente la distribución global.")
-
-        # --- BUCLE 2: AJUSTE DE DIVERSIDAD POR POSICIÓN ---
-        for _ in range(50): # Máximo 50 intentos de ajuste de diversidad
-            if self.validator._validar_distribucion_equilibrada(portafolio_ajustado):
-                self.logger.info("✅ Ajuste de diversidad por posición completado.")
-                break
-
-            # Encontrar la peor violacion
-            peor_violacion = None
-            max_desequilibrio = 0
-
-            for posicion in range(14):
-                conteos = {"L": 0, "E": 0, "V": 0}
-                for q in portafolio_ajustado:
-                    conteos[q["resultados"][posicion]] += 1
+    def _corregir_concentracion_quiniela(self, resultados: List[str], partidos: List[Dict[str, Any]]) -> List[str]:
+        """Corrige la concentración de una quiniela individual"""
+        resultados_corregidos = resultados.copy()
+        
+        # Corregir concentración general
+        for signo in ["L", "E", "V"]:
+            concentracion = resultados_corregidos.count(signo) / 14.0
+            if concentracion > self.config["CONCENTRACION_MAX_GENERAL"]:
+                # Cambiar los menos probables de este signo
+                indices_signo = [i for i, r in enumerate(resultados_corregidos) if r == signo]
+                # Ordenar por probabilidad (cambiar los menos probables)
+                indices_signo.sort(key=lambda i: partidos[i][f"prob_{self._resultado_a_clave(signo)}"])
                 
-                max_apariciones = len(portafolio_ajustado) * 0.67
-                for signo, count in conteos.items():
-                    if count > max_apariciones and count > max_desequilibrio:
-                        max_desequilibrio = count
-                        peor_violacion = (posicion, signo, "alto")
+                # Cambiar hasta que la concentración sea válida
+                cambios_necesarios = int(resultados_corregidos.count(signo) - 14 * self.config["CONCENTRACION_MAX_GENERAL"])
+                for i in range(min(cambios_necesarios, len(indices_signo))):
+                    idx = indices_signo[i]
+                    # Cambiar al resultado más probable que no sea el actual
+                    opciones = ["L", "E", "V"]
+                    opciones.remove(signo)
+                    mejor_opcion = max(opciones, key=lambda s: partidos[idx][f"prob_{self._resultado_a_clave(s)}"])
+                    resultados_corregidos[idx] = mejor_opcion
 
-            if not peor_violacion: break # No hay más violaciones que corregir
+        # Corregir concentración inicial
+        primeros_3 = resultados_corregidos[:3]
+        for signo in ["L", "E", "V"]:
+            concentracion_inicial = primeros_3.count(signo) / 3.0
+            if concentracion_inicial > self.config["CONCENTRACION_MAX_INICIAL"]:
+                # Cambiar en los primeros 3 partidos
+                indices_signo = [i for i in range(3) if resultados_corregidos[i] == signo]
+                if len(indices_signo) > int(3 * self.config["CONCENTRACION_MAX_INICIAL"]):
+                    # Cambiar el menos probable
+                    indices_signo.sort(key=lambda i: partidos[i][f"prob_{self._resultado_a_clave(signo)}"])
+                    idx_cambiar = indices_signo[0]
+                    opciones = ["L", "E", "V"]
+                    opciones.remove(signo)
+                    mejor_opcion = max(opciones, key=lambda s: partidos[idx_cambiar][f"prob_{self._resultado_a_clave(s)}"])
+                    resultados_corregidos[idx_cambiar] = mejor_opcion
 
-            pos, signo_exceso, _ = peor_violacion
+        return resultados_corregidos
+
+    def _encontrar_peor_desequilibrio(self, portafolio: List[Dict[str, Any]]) -> tuple:
+        """Encuentra la peor violación de distribución por posición"""
+        max_desequilibrio = 0
+        peor_posicion = None
+        peor_signo = None
+        
+        max_apariciones = len(portafolio) * 0.67  # 67% máximo
+        
+        for posicion in range(14):
+            conteos = {"L": 0, "E": 0, "V": 0}
+            for q in portafolio:
+                conteos[q["resultados"][posicion]] += 1
             
-            # Intentar corregir la peor violacion
-            # Buscar una quiniela que tenga el 'signo_exceso' en la 'pos' y cambiarlo
-            candidatos_cambio = []
-            for i, q in enumerate(portafolio_ajustado):
-                if q["resultados"][pos] == signo_exceso:
-                    # Evaluar la "calidad" de este pronóstico
-                    prob = partidos[pos][f"prob_{self._resultado_a_clave(signo_exceso)}"]
-                    candidatos_cambio.append((i, prob))
+            for signo, count in conteos.items():
+                if count > max_apariciones and count > max_desequilibrio:
+                    max_desequilibrio = count
+                    peor_posicion = posicion
+                    peor_signo = signo
+        
+        return peor_posicion, peor_signo
+
+    def _corregir_desequilibrio_posicion(self, portafolio: List[Dict[str, Any]], posicion: int, signo_exceso: str, partidos: List[Dict[str, Any]]) -> bool:
+        """Corrige el desequilibrio en una posición específica"""
+        # Buscar quinielas Satélite que tengan el signo en exceso en esa posición
+        candidatos = []
+        for i, q in enumerate(portafolio):
+            if q["tipo"] == "Satelite" and q["resultados"][posicion] == signo_exceso:
+                # Evaluar qué tan "fácil" es cambiar este resultado
+                prob_actual = partidos[posicion][f"prob_{self._resultado_a_clave(signo_exceso)}"]
+                candidatos.append((i, prob_actual))
+        
+        # Ordenar por probabilidad (cambiar primero los menos probables)
+        candidatos.sort(key=lambda x: x[1])
+        
+        # Intentar cambiar el menos probable
+        for q_idx, _ in candidatos[:3]:  # Intentar con los 3 menos probables
+            quiniela = portafolio[q_idx]
+            resultados_nuevos = quiniela["resultados"].copy()
             
-            # Ordenar por probabilidad (cambiar el menos probable)
-            candidatos_cambio.sort(key=lambda x: x[1])
-
-            corregido = False
-            for q_idx, _ in candidatos_cambio:
-                opciones = [s for s in ["L", "E", "V"] if s != signo_exceso]
-                # Intentar cambiar a cada una de las otras dos opciones
-                for nuevo_res in opciones:
-                    resultados_simulados = portafolio_ajustado[q_idx]["resultados"].copy()
-                    resultados_simulados[pos] = nuevo_res
-                    if self._es_movimiento_valido(portafolio_ajustado, q_idx, resultados_simulados):
-                        portafolio_ajustado[q_idx]["resultados"] = resultados_simulados
-                        corregido = True
-                        break
-                if corregido: break
-        else:
-            self.logger.warning("⚠️ No se pudo ajustar completamente la diversidad por posición.")
-
-        return portafolio_ajustado
+            # Intentar cambiar a cada una de las otras opciones
+            opciones = [s for s in ["L", "E", "V"] if s != signo_exceso]
+            for nuevo_resultado in opciones:
+                resultados_test = resultados_nuevos.copy()
+                resultados_test[posicion] = nuevo_resultado
+                
+                # Verificar que el movimiento sea válido
+                if self._es_movimiento_valido(portafolio, q_idx, resultados_test):
+                    # Aplicar el cambio
+                    portafolio[q_idx]["resultados"] = resultados_test
+                    portafolio[q_idx]["empates"] = resultados_test.count("E")
+                    portafolio[q_idx]["distribución"] = {
+                        "L": resultados_test.count("L"),
+                        "E": resultados_test.count("E"),
+                        "V": resultados_test.count("V")
+                    }
+                    return True
+        
+        return False
 
     def _precalcular_matrices_probabilidades(self, partidos: List[Dict[str, Any]]):
         self.probabilidades_matrix = np.zeros((14, 3))
@@ -348,7 +363,6 @@ class GRASPAnnealing:
         num_simulaciones = 1000
         aciertos_11_plus = 0
         
-        # --- CORRECCIÓN AQUÍ ---
         prob_acierto = np.array([partidos[i][f"prob_{self._resultado_a_clave(res)}"] for i, res in enumerate(resultados)])
         
         simulaciones = np.random.rand(num_simulaciones, 14)
