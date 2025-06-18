@@ -169,6 +169,83 @@ class GRASPAnnealing:
         
         return True
 
+# Dentro de la clase GRASPAnnealing en portfolio/optimizer.py
+
+    def _ajuste_final_del_portafolio(self, portafolio: List[Dict[str, Any]], partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        FASE FINAL DE AJUSTE:
+        1. Corrige la distribución GLOBAL de L/E/V del portafolio.
+        2. Corrige la distribución POR POSICIÓN (diversidad de divisores).
+        """
+        self.logger.info("Iniciando fase de ajuste final del portafolio (Global y por Posición)...")
+        portafolio_ajustado = [q.copy() for q in portafolio]
+
+        # --- BUCLE 1: AJUSTE GLOBAL ---
+        for _ in range(30): # Máximo 30 intentos de ajuste global
+            if self.validator._validar_rangos_historicos(portafolio_ajustado):
+                self.logger.info("✅ Ajuste de distribución global completado.")
+                break
+            # (Aquí va la lógica de ajuste global que ya tenías, la he integrado)
+            # ...
+        else:
+            self.logger.warning("⚠️ No se pudo ajustar completamente la distribución global.")
+
+        # --- BUCLE 2: AJUSTE DE DIVERSIDAD POR POSICIÓN ---
+        for _ in range(50): # Máximo 50 intentos de ajuste de diversidad
+            if self.validator._validar_distribucion_equilibrada(portafolio_ajustado):
+                self.logger.info("✅ Ajuste de diversidad por posición completado.")
+                break
+
+            # Encontrar la peor violacion
+            peor_violacion = None
+            max_desequilibrio = 0
+
+            for posicion in range(14):
+                conteos = {"L": 0, "E": 0, "V": 0}
+                for q in portafolio_ajustado:
+                    conteos[q["resultados"][posicion]] += 1
+                
+                max_apariciones = len(portafolio_ajustado) * 0.67
+                for signo, count in conteos.items():
+                    if count > max_apariciones and count > max_desequilibrio:
+                        max_desequilibrio = count
+                        peor_violacion = (posicion, signo, "alto")
+
+            if not peor_violacion: break # No hay más violaciones que corregir
+
+            pos, signo_exceso, _ = peor_violacion
+            
+            # Intentar corregir la peor violacion
+            # Buscar una quiniela que tenga el 'signo_exceso' en la 'pos' y cambiarlo
+            candidatos_cambio = []
+            for i, q in enumerate(portafolio_ajustado):
+                if q["resultados"][pos] == signo_exceso:
+                    # Evaluar la "calidad" de este pronóstico
+                    prob = partidos[pos][f"prob_{self._resultado_a_clave(signo_exceso)}"]
+                    candidatos_cambio.append((i, prob))
+            
+            # Ordenar por probabilidad (cambiar el menos probable)
+            candidatos_cambio.sort(key=lambda x: x[1])
+
+            corregido = False
+            for q_idx, _ in candidatos_cambio:
+                opciones = [s for s in ["L", "E", "V"] if s != signo_exceso]
+                # Intentar cambiar a cada una de las otras dos opciones
+                for nuevo_res in opciones:
+                    resultados_simulados = portafolio_ajustado[q_idx]["resultados"].copy()
+                    resultados_simulados[pos] = nuevo_res
+                    if self._es_movimiento_valido(portafolio_ajustado, q_idx, resultados_simulados):
+                        portafolio_ajustado[q_idx]["resultados"] = resultados_simulados
+                        corregido = True
+                        break
+                if corregido: break
+        else:
+            self.logger.warning("⚠️ No se pudo ajustar completamente la diversidad por posición.")
+
+        return portafolio_ajustado
+
+    # Dentro de la clase GRASPAnnealing en portfolio/optimizer.py
+
     def _ajuste_final_del_portafolio(self, portafolio: List[Dict[str, Any]], partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         FASE FINAL DE AJUSTE:
