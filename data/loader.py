@@ -2,6 +2,7 @@
 """
 Cargador de datos según especificaciones del documento técnico - VERSIÓN CORREGIDA
 CORRECCIÓN CRÍTICA: Datos balanceados que respetan distribución histórica 38%L, 29%E, 33%V
+Y que SÍ generan partidos Ancla reales (>60% probabilidad)
 """
 
 import pandas as pd
@@ -13,7 +14,7 @@ from typing import Dict, List, Any, Optional
 class DataLoader:
     """
     Carga datos desde CSV y los convierte al formato requerido para el pipeline
-    CORREGIDO: Genera datos balanceados que cumplen distribución histórica
+    CORREGIDO: Genera datos balanceados que cumplen distribución histórica Y crean Anclas
     """
     
     def __init__(self):
@@ -139,59 +140,36 @@ class DataLoader:
         
         return float(probs[0]), float(probs[1]), float(probs[2])
     
-    def _generar_probabilidades_realistas(self) -> tuple:
-        """
-        CORREGIDA: Genera probabilidades que respetan distribución histórica
-        """
-        # Usar distribución histórica como guía estricta
-        from config.constants import PROGOL_CONFIG
-        hist_dist = PROGOL_CONFIG["DISTRIBUCION_HISTORICA"]
-        
-        # Generar con variación controlada alrededor de la distribución histórica
-        ruido = np.random.normal(0, 0.08, 3)  # Reducir ruido de 0.05 a 0.08
-        
-        prob_local = max(0.05, min(0.75, hist_dist["L"] + ruido[0]))
-        prob_empate = max(0.05, min(0.55, hist_dist["E"] + ruido[1]))
-        prob_visitante = max(0.05, min(0.75, hist_dist["V"] + ruido[2]))
-        
-        # Normalizar para que sume 1
-        total = prob_local + prob_empate + prob_visitante
-        prob_local /= total
-        prob_empate /= total
-        prob_visitante /= total
-        
-        return prob_local, prob_empate, prob_visitante
-    
     def _generar_datos_ejemplo(self) -> List[Dict[str, Any]]:
         """
         COMPLETAMENTE REESCRITA: Genera 14 partidos balanceados que respetan distribución histórica
-        Diseñado específicamente para crear Anclas, Divisores y TendenciaEmpate
+        Y QUE SÍ CREAN PARTIDOS ANCLA REALES (>65% probabilidad)
         """
-        self.logger.info("Generando 14 partidos de ejemplo BALANCEADOS...")
+        self.logger.info("Generando 14 partidos de ejemplo BALANCEADOS CON ANCLAS GARANTIZADAS...")
         
-        # Equipos realistas para diferentes ligas
+        # Equipos realistas para diferentes ligas - CONFIGURACIÓN ESPECÍFICA PARA ANCLAS
         equipos_config = [
-            # ANCLAS (4 partidos con probabilidades >60% para tener Anclas reales)
-            ('Real Madrid', 'Getafe', 'La Liga', {'tipo': 'ancla_local', 'prob_target': 0.65}),
-            ('Manchester City', 'Sheffield Wed', 'Premier League', {'tipo': 'ancla_local', 'prob_target': 0.68}),
-            ('Mallorca', 'Barcelona', 'La Liga', {'tipo': 'ancla_visitante', 'prob_target': 0.62}),
-            ('Brighton', 'Liverpool', 'Premier League', {'tipo': 'ancla_visitante', 'prob_target': 0.64}),
+            # ANCLAS LOCALES FUERTES (4 partidos con >65% probabilidad local)
+            ('Manchester City', 'Sheffield Wed', 'Premier League', {'tipo': 'ancla_local_fuerte', 'prob_local': 0.72}),
+            ('Real Madrid', 'Getafe', 'La Liga', {'tipo': 'ancla_local_fuerte', 'prob_local': 0.68}),
+            ('Bayern Munich', 'Hoffenheim', 'Bundesliga', {'tipo': 'ancla_local_fuerte', 'prob_local': 0.70}),
+            ('PSG', 'Montpellier', 'Ligue 1', {'tipo': 'ancla_local_fuerte', 'prob_local': 0.69}),
             
-            # TENDENCIA EMPATE (2 partidos diseñados para empate)
-            ('Athletic Club', 'Real Sociedad', 'La Liga', {'tipo': 'empate', 'prob_target': 0.42}),
-            ('Tottenham', 'Chelsea', 'Premier League', {'tipo': 'empate', 'prob_target': 0.38}),
+            # ANCLAS VISITANTES FUERTES (2 partidos)
+            ('Brighton', 'Liverpool', 'Premier League', {'tipo': 'ancla_visitante_fuerte', 'prob_visitante': 0.66}),
+            ('Celta', 'Barcelona', 'La Liga', {'tipo': 'ancla_visitante_fuerte', 'prob_visitante': 0.64}),
             
-            # DIVISORES EQUILIBRADOS (4 partidos 40-60%)
-            ('Sevilla', 'Valencia', 'La Liga', {'tipo': 'equilibrado', 'prob_target': 0.45}),
-            ('Arsenal', 'Newcastle', 'Premier League', {'tipo': 'equilibrado', 'prob_target': 0.48}),
-            ('Villarreal', 'Betis', 'La Liga', {'tipo': 'equilibrado', 'prob_target': 0.44}),
-            ('West Ham', 'Aston Villa', 'Premier League', {'tipo': 'equilibrado', 'prob_target': 0.46}),
+            # TENDENCIA EMPATE (3 partidos diseñados para empate)
+            ('Athletic Club', 'Real Sociedad', 'La Liga', {'tipo': 'empate_fuerte', 'prob_empate': 0.42}),
+            ('Tottenham', 'Chelsea', 'Premier League', {'tipo': 'empate_fuerte', 'prob_empate': 0.38}),
+            ('Valencia', 'Sevilla', 'La Liga', {'tipo': 'empate_fuerte', 'prob_empate': 0.40}),
             
-            # DIVISORES CON SESGO VISITANTE (4 partidos para balancear)
-            ('Las Palmas', 'Atlético Madrid', 'La Liga', {'tipo': 'divisor_visitante', 'prob_target': 0.52}),
-            ('Crystal Palace', 'Manchester Utd', 'Premier League', {'tipo': 'divisor_visitante', 'prob_target': 0.48}),
-            ('Espanyol', 'Real Madrid', 'La Liga', {'tipo': 'divisor_visitante', 'prob_target': 0.55}),
-            ('Burnley', 'Arsenal', 'Premier League', {'tipo': 'divisor_visitante', 'prob_target': 0.50})
+            # DIVISORES EQUILIBRADOS (5 partidos 40-60%)
+            ('Arsenal', 'Newcastle', 'Premier League', {'tipo': 'equilibrado', 'prob_local': 0.45}),
+            ('Villarreal', 'Betis', 'La Liga', {'tipo': 'equilibrado', 'prob_local': 0.44}),
+            ('West Ham', 'Aston Villa', 'Premier League', {'tipo': 'equilibrado', 'prob_visitante': 0.48}),
+            ('Crystal Palace', 'Manchester Utd', 'Premier League', {'tipo': 'equilibrado', 'prob_visitante': 0.46}),
+            ('Atletico Madrid', 'Villarreal', 'La Liga', {'tipo': 'equilibrado', 'prob_local': 0.43})
         ]
         
         partidos = []
@@ -201,8 +179,8 @@ class DataLoader:
             prob_local, prob_empate, prob_visitante = self._generar_probs_por_tipo(config)
             
             # Agregar variación contextual realista
-            es_derbi = 'clásico' in f"{home} vs {away}".lower() or (home in ['Real Madrid', 'Barcelona'] and away in ['Real Madrid', 'Barcelona'])
-            es_final = liga == 'UEFA CL' or 'final' in liga.lower()
+            es_derbi = any(word in f"{home} {away}".lower() for word in ['madrid', 'barcelona', 'chelsea', 'tottenham'])
+            es_final = liga == 'Final UCL' or 'final' in liga.lower()
             
             partido = {
                 'id': idx,
@@ -224,53 +202,50 @@ class DataLoader:
             
             partidos.append(partido)
         
-        # VALIDACIÓN: Verificar que la distribución global sea correcta
-        self._validar_distribucion_global(partidos)
+        # VALIDACIÓN CRÍTICA: Verificar que tenemos Anclas reales
+        self._validar_anclas_generadas(partidos)
         
-        self.logger.info(f"✅ Generados {len(partidos)} partidos BALANCEADOS con distribución histórica correcta")
+        self.logger.info(f"✅ Generados {len(partidos)} partidos BALANCEADOS con Anclas garantizadas")
         return partidos[:14]  # Exactamente 14
     
     def _generar_probs_por_tipo(self, config: Dict) -> tuple:
         """
         Genera probabilidades específicas según el tipo de partido diseñado
-        CORRECCIÓN: Probabilidades más altas para generar Anclas reales
+        CORRECCIÓN: Probabilidades MUY altas para generar Anclas reales
         """
         tipo = config['tipo']
-        prob_target = config['prob_target']
         
-        if tipo == 'ancla_local':
+        if tipo == 'ancla_local_fuerte':
             # CORRECCIÓN: Probabilidades MUY altas para que después de calibración queden >60%
-            prob_local = max(0.75, prob_target + 0.15)  # 0.80-0.83 inicial
-            prob_empate = np.random.uniform(0.12, 0.18)  # Menor empate
+            prob_local = max(0.68, config.get('prob_local', 0.70))  # Mínimo 68%
+            prob_empate = np.random.uniform(0.15, 0.20)  # Empate bajo
             prob_visitante = 1.0 - prob_local - prob_empate
             
-        elif tipo == 'ancla_visitante':
+        elif tipo == 'ancla_visitante_fuerte':
             # CORRECCIÓN: Probabilidades MUY altas para visitantes
-            prob_visitante = max(0.75, prob_target + 0.15)  # 0.77-0.79 inicial  
-            prob_empate = np.random.uniform(0.12, 0.18)
+            prob_visitante = max(0.64, config.get('prob_visitante', 0.66))  # Mínimo 64%
+            prob_empate = np.random.uniform(0.15, 0.20)  # Empate bajo
             prob_local = 1.0 - prob_empate - prob_visitante
             
-        elif tipo == 'empate':
-            prob_empate = prob_target  # 0.38-0.42
+        elif tipo == 'empate_fuerte':
+            prob_empate = config.get('prob_empate', 0.40)  # 0.38-0.42
             diff = 1.0 - prob_empate
             prob_local = np.random.uniform(0.25, diff - 0.25)
             prob_visitante = diff - prob_local
             
         elif tipo == 'equilibrado':
             # Distribución más equilibrada
-            prob_local = np.random.uniform(0.35, 0.48)
-            prob_empate = np.random.uniform(0.25, 0.35)
-            prob_visitante = 1.0 - prob_local - prob_empate
-            
-        elif tipo == 'divisor_visitante':
-            # Favorece visitante pero no tanto como Ancla
-            prob_visitante = np.random.uniform(0.40, 0.55)
-            prob_empate = np.random.uniform(0.22, 0.32)
-            prob_local = 1.0 - prob_empate - prob_visitante
-            
+            if 'prob_local' in config:
+                prob_local = config['prob_local']
+                prob_empate = np.random.uniform(0.25, 0.35)
+                prob_visitante = 1.0 - prob_local - prob_empate
+            else:
+                prob_visitante = config['prob_visitante']
+                prob_empate = np.random.uniform(0.25, 0.35)
+                prob_local = 1.0 - prob_empate - prob_visitante
         else:
             # Fallback a distribución histórica
-            return self._generar_probabilidades_realistas()
+            return (0.38, 0.29, 0.33)
         
         # Normalizar y validar
         probs = np.array([prob_local, prob_empate, prob_visitante])
@@ -279,28 +254,22 @@ class DataLoader:
         
         return float(probs[0]), float(probs[1]), float(probs[2])
     
-    def _validar_distribucion_global(self, partidos: List[Dict[str, Any]]):
+    def _validar_anclas_generadas(self, partidos: List[Dict[str, Any]]):
         """
-        Valida que la distribución global de probabilidades respete rangos históricos
+        NUEVA: Valida que los datos generados SÍ crearán partidos Ancla
         """
-        total_prob_local = sum(p['prob_local'] for p in partidos)
-        total_prob_empate = sum(p['prob_empate'] for p in partidos)
-        total_prob_visitante = sum(p['prob_visitante'] for p in partidos)
+        anclas_potenciales = 0
         
-        # Calcular porcentajes esperados (suma debe ser ~14 * distribución histórica)
-        esperado_local = 14 * 0.38  # ~5.32
-        esperado_empate = 14 * 0.29  # ~4.06
-        esperado_visitante = 14 * 0.33  # ~4.62
+        for i, partido in enumerate(partidos):
+            max_prob = max(partido['prob_local'], partido['prob_empate'], partido['prob_visitante'])
+            if max_prob > 0.60:
+                anclas_potenciales += 1
+                self.logger.debug(f"Partido {i+1} ({partido['home']} vs {partido['away']}): Ancla potencial con {max_prob:.3f}")
         
-        self.logger.info(f"Distribución generada - L: {total_prob_local:.2f} (esp: {esperado_local:.2f}), " +
-                        f"E: {total_prob_empate:.2f} (esp: {esperado_empate:.2f}), " +
-                        f"V: {total_prob_visitante:.2f} (esp: {esperado_visitante:.2f})")
-        
-        # Advertir si está muy desbalanceado
-        if abs(total_prob_local - esperado_local) > 1.0:
-            self.logger.warning(f"⚠️ Distribución de locales desbalanceada: {total_prob_local:.2f} vs esperado {esperado_local:.2f}")
-        
-        if abs(total_prob_visitante - esperado_visitante) > 1.0:
-            self.logger.warning(f"⚠️ Distribución de visitantes desbalanceada: {total_prob_visitante:.2f} vs esperado {esperado_visitante:.2f}")
+        if anclas_potenciales < 3:
+            self.logger.error(f"❌ Solo {anclas_potenciales} Anclas potenciales - INSUFICIENTE")
+            raise ValueError("Los datos generados no crearán suficientes partidos Ancla")
+        else:
+            self.logger.info(f"✅ {anclas_potenciales} Anclas potenciales detectadas - SUFICIENTE")
         
         return True

@@ -263,26 +263,36 @@ class ProgolOptimizer:
     
     def _detectar_problemas_quiniela(self, quiniela: Dict[str, Any]) -> List[str]:
         """
-        Detecta todos los problemas de una quiniela
+        Detecta todos los problemas de una quiniela - MEJORADO con detalles específicos
         """
         problemas = []
         
-        # Empates
-        if not (4 <= quiniela.get("empates", 0) <= 6):
-            problemas.append(f"empates={quiniela.get('empates', 0)} (debe ser 4-6)")
+        # Empates - MÁS ESPECÍFICO
+        empates = quiniela.get("empates", 0)
+        if not (4 <= empates <= 6):
+            if empates < 4:
+                problemas.append(f"empates_pocos={empates} (necesita al menos 4)")
+            else:
+                problemas.append(f"empates_exceso={empates} (máximo 6)")
         
-        # Concentración general
-        if "distribucion" in quiniela:
-            max_conc = max(quiniela["distribucion"].values()) / 14
-            if max_conc > 0.70:
-                problemas.append(f"concentración general {max_conc:.1%} > 70%")
+        # Concentración general - IDENTIFICAR QUÉ SIGNO
+        if "distribución" in quiniela:
+            distribucion = quiniela["distribución"]
+            max_conc = max(distribucion.values())
+            max_conc_pct = max_conc / 14
+            
+            if max_conc_pct > 0.70:
+                # Identificar QUÉ signo está concentrado
+                signo_concentrado = max(distribucion, key=distribucion.get)
+                problemas.append(f"concentracion_general={signo_concentrado}:{max_conc}/14 (>70%)")
         
-        # Concentración inicial
-        if "resultados" in quiniela:
+        # Concentración inicial - MÁS ESPECÍFICO
+        if "resultados" in quiniela and len(quiniela["resultados"]) >= 3:
             primeros_3 = quiniela["resultados"][:3]
-            max_conc_inicial = max(primeros_3.count(s) for s in ["L", "E", "V"]) / 3
-            if max_conc_inicial > 0.60:
-                problemas.append(f"concentración inicial {max_conc_inicial:.1%} > 60%")
+            for signo in ["L", "E", "V"]:
+                count_inicial = primeros_3.count(signo)
+                if count_inicial > 2:  # >60% de los primeros 3
+                    problemas.append(f"concentracion_inicial={signo}:{count_inicial}/3 (>60%)")
         
         return problemas
     

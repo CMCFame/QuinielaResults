@@ -1,12 +1,8 @@
 # streamlit_app.py
 """
-Interfaz gráfica Streamlit para Progol Optimizer - VERSIÓN CORREGIDA Y CON SELECTOR DE MÉTODO
+Interfaz gráfica Streamlit para Progol Optimizer - VERSIÓN CORREGIDA CON DEBUG AI
 Permite cargar datos, ejecutar optimización y ver resultados
-CORRECCIONES APLICADAS:
-- CSV del usuario ahora se procesa correctamente 
-- Tabla muestra nombres de equipos por partido
-- Slider corregido para mismo número de empates
-- Calibración global aplicada
+NUEVA FUNCIONALIDAD: Ventana de debug para ver comunicación con la IA
 """
 
 import streamlit as st
@@ -20,6 +16,7 @@ import os
 from pathlib import Path
 import logging
 import tempfile
+import numpy as np
 
 # REPARACIÓN DE IMPORTS - Ajustado para estructura de archivos actual
 current_dir = Path(__file__).parent
@@ -36,7 +33,7 @@ except ImportError as e:
 
 class ProgolStreamlitApp:
     """
-    Aplicación Streamlit para el Progol Optimizer - VERSIÓN CORREGIDA
+    Aplicación Streamlit para el Progol Optimizer - VERSIÓN CORREGIDA CON DEBUG AI
     """
 
     def __init__(self):
@@ -201,14 +198,14 @@ class ProgolStreamlitApp:
 
             # Opción 1: Usar datos de ejemplo
             if st.button("🎲 Usar Datos de Ejemplo", type="secondary"):
-                with st.spinner("Generando datos de ejemplo..."):
+                with st.spinner("Generando datos de ejemplo con Anclas garantizadas..."):
                     try:
                         from data.loader import DataLoader
                         loader = DataLoader()
                         datos_ejemplo = loader._generar_datos_ejemplo()
                         st.session_state.datos_partidos = datos_ejemplo
-                        st.session_state.archivo_origen = "datos_ejemplo"
-                        st.success(f"✅ Generados {len(datos_ejemplo)} partidos de ejemplo")
+                        st.session_state.archivo_origen = "datos_ejemplo_corregidos"
+                        st.success(f"✅ Generados {len(datos_ejemplo)} partidos de ejemplo con Anclas garantizadas")
 
                     except Exception as e:
                         st.error(f"Error generando datos: {e}")
@@ -258,7 +255,7 @@ class ProgolStreamlitApp:
                             # Generar probabilidades realistas si no están en CSV
                             from data.loader import DataLoader
                             loader = DataLoader()
-                            prob_local, prob_empate, prob_visitante = loader._generar_probabilidades_realistas()
+                            prob_local, prob_empate, prob_visitante = loader._generar_probabilidades_balanceadas_por_partido(idx)
 
                         partido = {
                             'id': idx,
@@ -298,7 +295,9 @@ class ProgolStreamlitApp:
                 archivo_origen = st.session_state.get('archivo_origen', 'datos_ejemplo')
 
                 # MEJORA: Mostrar origen de datos claramente
-                if archivo_origen == 'datos_ejemplo':
+                if archivo_origen == 'datos_ejemplo_corregidos':
+                    st.info("📊 **Usando datos de ejemplo CORREGIDOS con Anclas garantizadas**")
+                elif archivo_origen == 'datos_ejemplo':
                     st.info("📊 **Usando datos de ejemplo generados**")
                 else:
                     st.success(f"📄 **Usando datos de: {archivo_origen}**")
@@ -332,8 +331,9 @@ class ProgolStreamlitApp:
                     st.metric("Ligas", ligas)
 
                 with col_c:
-                    finales = sum(1 for p in datos if p.get('es_final'))
-                    st.metric("Finales/Especiales", finales)
+                    # Verificar potenciales Anclas
+                    anclas_potenciales = sum(1 for p in datos if max(p['prob_local'], p['prob_empate'], p['prob_visitante']) > 0.60)
+                    st.metric("Anclas Potenciales", anclas_potenciales)
 
             else:
                 st.info("👆 Carga datos usando una de las opciones de arriba")
@@ -380,6 +380,7 @@ class ProgolStreamlitApp:
 
         if 'optimizacion_ejecutando' in st.session_state and st.session_state.optimizacion_ejecutando:
             self.mostrar_progreso_optimizacion()
+
     def ejecutar_optimizacion(self, forzar_ai=False):
         """Ejecutar el proceso completo de optimización"""
         st.session_state.optimizacion_ejecutando = True
@@ -411,7 +412,6 @@ class ProgolStreamlitApp:
                 st.exception(e)
         finally:
             st.session_state.optimizacion_ejecutando = False
-
 
     def ejecutar_optimizacion_directo(self, optimizer, progress_callback=None, forzar_ai=False):
         """Ejecutar optimización usando datos y método seleccionados."""
@@ -485,7 +485,6 @@ class ProgolStreamlitApp:
 
         if not es_valido:
             st.warning("⚠️ **El portafolio tiene problemas de validación**")
-            # ... (Lógica para mostrar problemas)
         else:
             st.success("✅ **Todas las reglas de validación cumplidas**")
         
@@ -550,7 +549,6 @@ class ProgolStreamlitApp:
                 st.metric("Visitantes (V)", f"{dist['V']:.1%}", 
                          delta=f"Objetivo: 30-36%")
 
-
     def crear_visualizaciones(self, portafolio, partidos, metricas):
         """Crear visualizaciones de los resultados - VERSIÓN ROBUSTA"""
         st.subheader("📊 Visualizaciones")
@@ -591,16 +589,6 @@ class ProgolStreamlitApp:
             except Exception as e:
                 st.error(f"Error en gráfico de clasificación: {str(e)}")
                 self.mostrar_clasificacion_simple(partidos)
-
-            # Correlaciones de satélites - opcional
-            try:
-                satelites = [q for q in portafolio if q.get("tipo") == "Satelite"]
-                if len(satelites) >= 4:
-                    fig_correlacion = self.grafico_correlaciones_satelites_seguro(satelites)
-                    if fig_correlacion:
-                        st.plotly_chart(fig_correlacion, use_container_width=True)
-            except Exception as e:
-                st.warning(f"No se pudieron mostrar correlaciones: {str(e)}")
 
         except Exception as e:
             st.error(f"Error general en visualizaciones: {str(e)}")
@@ -700,7 +688,6 @@ class ProgolStreamlitApp:
             st.error(f"Error creando gráfico de distribución: {e}")
             return None
 
-
     def grafico_empates_distribucion_seguro(self, portafolio):
         """Histograma de distribución de empates - VERSIÓN SEGURA"""
         try:
@@ -789,74 +776,6 @@ class ProgolStreamlitApp:
 
         except Exception as e:
             st.error(f"Error creando gráfico de clasificación: {e}")
-            return None
-
-
-    def grafico_correlaciones_satelites_seguro(self, satelites):
-        """Mapa de calor de correlaciones entre satélites - VERSIÓN SEGURA"""
-        try:
-            if not satelites or len(satelites) < 2:
-                return None
-
-            # Validar que los satélites tengan la estructura correcta
-            satelites_validos = []
-            for sat in satelites:
-                if (isinstance(sat, dict) and 
-                    'resultados' in sat and 
-                    isinstance(sat['resultados'], list) and 
-                    len(sat['resultados']) == 14):
-                    satelites_validos.append(sat)
-
-            if len(satelites_validos) < 2:
-                return None
-
-            # Calcular matriz de correlaciones
-            n_satelites = min(len(satelites_validos), 10)  # Limitar a 10 para performance
-            satelites_a_usar = satelites_validos[:n_satelites]
-            
-            correlaciones = np.zeros((n_satelites, n_satelites))
-            labels = []
-
-            for i, sat_i in enumerate(satelites_a_usar):
-                labels.append(sat_i.get("id", f"Sat-{i+1}"))
-                for j, sat_j in enumerate(satelites_a_usar):
-                    if i == j:
-                        correlaciones[i, j] = 1.0
-                    else:
-                        # Calcular correlación Jaccard
-                        resultados_i = sat_i["resultados"]
-                        resultados_j = sat_j["resultados"]
-                        
-                        coincidencias = sum(1 for a, b in zip(resultados_i, resultados_j) if a == b)
-                        correlaciones[i, j] = coincidencias / 14.0
-
-            # Crear mapa de calor
-            fig = go.Figure()
-            
-            fig.add_trace(go.Heatmap(
-                z=correlaciones,
-                x=labels,
-                y=labels,
-                colorscale='RdYlBu_r',
-                zmin=0,
-                zmax=1,
-                text=np.round(correlaciones, 2),
-                texttemplate="%{text}",
-                textfont={"size": 10},
-                showscale=True
-            ))
-
-            fig.update_layout(
-                title='Correlaciones Jaccard entre Satélites',
-                xaxis_title='Satélites',
-                yaxis_title='Satélites',
-                height=500
-            )
-
-            return fig
-
-        except Exception as e:
-            st.error(f"Error creando gráfico de correlaciones: {e}")
             return None
 
     def mostrar_tabla_distribucion_simple(self, portafolio):
@@ -1035,8 +954,91 @@ class ProgolStreamlitApp:
         else:
             st.warning("No se encontraron archivos exportados")
 
+    def mostrar_ventana_debug_ai(self):
+        """NUEVA FUNCIÓN: Ventana de debug para mostrar interacciones con AI"""
+        
+        with st.expander("🔍 **Debug AI - Ver Comunicación con la IA**", expanded=False):
+            
+            # Toggle para activar/desactivar debug
+            debug_ai_activo = st.toggle(
+                "Mostrar respuestas detalladas de la IA", 
+                value=st.session_state.get('debug_ai_activo', False),
+                help="Activa esto para ver exactamente qué dice la IA en cada corrección"
+            )
+            st.session_state.debug_ai_activo = debug_ai_activo
+            
+            if debug_ai_activo:
+                st.info("🤖 **Modo Debug AI Activado** - Las próximas respuestas de la IA se mostrarán aquí")
+                
+                # Mostrar historial de respuestas si existe
+                if 'ai_debug_responses' in st.session_state and st.session_state.ai_debug_responses:
+                    st.markdown("### 📝 Historial de Respuestas de la IA")
+                    
+                    for i, response in enumerate(st.session_state.ai_debug_responses):
+                        with st.container():
+                            col1, col2 = st.columns([1, 4])
+                            
+                            with col1:
+                                timestamp = response.get('timestamp', 'N/A')
+                                st.write(f"**{i+1}.** `{timestamp}`")
+                                
+                                quiniela_id = response.get('quiniela_id', 'N/A')
+                                st.write(f"**ID:** {quiniela_id}")
+                                
+                                success = response.get('success', False)
+                                if success:
+                                    st.success("✅ Éxito")
+                                else:
+                                    st.error("❌ Falló")
+                            
+                            with col2:
+                                problemas = response.get('problemas', [])
+                                if problemas:
+                                    st.write(f"**Problemas detectados:** {', '.join(problemas)}")
+                                
+                                # Mostrar prompt enviado
+                                if st.button(f"Ver Prompt Enviado #{i+1}", key=f"show_prompt_{i}"):
+                                    st.code(response.get('prompt', 'No disponible'), language='text')
+                                
+                                # Mostrar respuesta de la AI
+                                if st.button(f"Ver Respuesta AI #{i+1}", key=f"show_response_{i}"):
+                                    st.code(response.get('ai_response', 'No disponible'), language='json')
+                                
+                                # Mostrar resultado parseado
+                                resultado_parseado = response.get('parsed_result', None)
+                                if resultado_parseado:
+                                    st.write(f"**Resultado:** {resultado_parseado}")
+                                else:
+                                    st.write("**Resultado:** No se pudo parsear")
+                            
+                            st.divider()
+                    
+                    # Botón para limpiar historial
+                    if st.button("🗑️ Limpiar Historial de Debug"):
+                        st.session_state.ai_debug_responses = []
+                        st.rerun()
+                        
+                else:
+                    st.write("No hay interacciones con la IA todavía. Ejecuta una optimización para ver los datos.")
+            
+            # Estadísticas de API usage
+            if 'ai_usage_stats' in st.session_state:
+                stats = st.session_state.ai_usage_stats
+                
+                st.markdown("### 📊 Estadísticas de Uso de la IA")
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Llamadas", stats.get('total_calls', 0))
+                with col2:
+                    st.metric("Éxitos", stats.get('successful_calls', 0))
+                with col3:
+                    st.metric("Fallos", stats.get('failed_calls', 0))
+                with col4:
+                    costo_estimado = stats.get('total_calls', 0) * 0.002  # Estimación
+                    st.metric("Costo Est. USD", f"${costo_estimado:.3f}")
+
     def tab_validacion(self):
-        """Tab para mostrar detalles de validación"""
+        """Tab para mostrar detalles de validación - CON DEBUG AI"""
         st.header("📋 Validación del Portafolio")
 
         if 'resultado_optimizacion' not in st.session_state or not st.session_state.resultado_optimizacion.get("success"):
@@ -1051,6 +1053,9 @@ class ProgolStreamlitApp:
             st.success("✅ PORTAFOLIO VÁLIDO - Cumple todas las reglas obligatorias")
         else:
             st.error("❌ PORTAFOLIO INVÁLIDO - No cumple algunas reglas")
+
+        # *** NUEVA VENTANA DE DEBUG AI ***
+        self.mostrar_ventana_debug_ai()
 
         st.subheader("Detalle de Validaciones")
 
@@ -1094,24 +1099,6 @@ class ProgolStreamlitApp:
                 if st.button("🔧 Re-optimizar con AI", type="primary", use_container_width=True):
                     st.session_state.ejecutar_con_ai = True
                     st.rerun()
-            
-            with st.expander("📊 Solicitar Análisis Detallado con AI"):
-                if st.button("Analizar Portafolio"):
-                    with st.spinner("La AI está analizando el portafolio..."):
-                        try:
-                            from models.ai_assistant import ProgolAIAssistant
-                            ai_assistant = ProgolAIAssistant()
-                            if ai_assistant.enabled:
-                                analisis = ai_assistant.validar_y_explicar_portafolio(
-                                    resultado["portafolio"], 
-                                    resultado["partidos"]
-                                )
-                                st.markdown("**Análisis de la IA:**")
-                                st.markdown(analisis["explicacion"])
-                            else:
-                                st.error("No se pudo inicializar el asistente AI.")
-                        except Exception as e:
-                            st.error(f"Error en análisis AI: {e}")
 
 def main():
     """Función principal para ejecutar la app"""
