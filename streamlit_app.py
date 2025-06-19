@@ -380,45 +380,45 @@ class ProgolStreamlitApp:
             self.mostrar_progreso_optimizacion()
 
     def ejecutar_optimizacion(self, forzar_ai=False):
-    """Ejecutar el proceso completo de optimización"""
-    st.session_state.optimizacion_ejecutando = True
-    st.session_state.forzar_ai = forzar_ai  # Guardar en session_state
+        """Ejecutar el proceso completo de optimización"""
+        st.session_state.optimizacion_ejecutando = True
+        st.session_state.forzar_ai = forzar_ai  # Guardar en session_state
 
-    progress_bar = st.progress(0, text="Inicializando...")
+        progress_bar = st.progress(0, text="Inicializando...")
 
-    try:
-        # Inicializar optimizador
-        progress_bar.progress(10, text="🔧 Inicializando optimizador...")
-        optimizer = ProgolOptimizer()
+        try:
+            # Inicializar optimizador
+            progress_bar.progress(10, text="🔧 Inicializando optimizador...")
+            optimizer = ProgolOptimizer()
 
-        def update_progress(progress_value, text_value):
-            display_progress = 30 + int(progress_value * 60)
-            progress_bar.progress(display_progress, text=text_value)
+            def update_progress(progress_value, text_value):
+                display_progress = 30 + int(progress_value * 60)
+                progress_bar.progress(display_progress, text=text_value)
 
-        # Ejecutar optimización
-        progress_bar.progress(30, text="⚙️ Ejecutando optimización GRASP-Annealing...")
-        
-        # Indicar si estamos usando AI
-        if forzar_ai and optimizer.ai_assistant.enabled:
-            progress_bar.progress(35, text="🤖 Optimización con asistencia AI activada...")
+            # Ejecutar optimización
+            progress_bar.progress(30, text="⚙️ Ejecutando optimización GRASP-Annealing...")
+            
+            # Indicar si estamos usando AI
+            if forzar_ai and optimizer.ai_assistant.enabled:
+                progress_bar.progress(35, text="🤖 Optimización con asistencia AI activada...")
 
-        resultado = self.ejecutar_optimizacion_directo(optimizer, progress_callback=update_progress, forzar_ai=forzar_ai)
+            resultado = self.ejecutar_optimizacion_directo(optimizer, progress_callback=update_progress, forzar_ai=forzar_ai)
 
-        progress_bar.progress(100, text="✅ Optimización completada!")
+            progress_bar.progress(100, text="✅ Optimización completada!")
 
-        # Guardar resultados
-        st.session_state.resultado_optimizacion = resultado
-        st.session_state.optimizacion_ejecutando = False
+            # Guardar resultados
+            st.session_state.resultado_optimizacion = resultado
+            st.session_state.optimizacion_ejecutando = False
 
-        # Mostrar resumen inmediato
-        self.mostrar_resumen_resultado(resultado)
+            # Mostrar resumen inmediato
+            self.mostrar_resumen_resultado(resultado)
 
-    except Exception as e:
-        st.error(f"❌ Error en optimización: {e}")
-        st.session_state.optimizacion_ejecutando = False
+        except Exception as e:
+            st.error(f"❌ Error en optimización: {e}")
+            st.session_state.optimizacion_ejecutando = False
 
-        if st.session_state.debug_mode:
-            st.exception(e)
+            if st.session_state.debug_mode:
+                st.exception(e)
 
     def ejecutar_optimizacion_directo(self, optimizer, progress_callback=None, forzar_ai=False):
         """Ejecutar optimización usando datos ya cargados"""
@@ -459,7 +459,6 @@ class ProgolStreamlitApp:
             import os
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-
 
     def mostrar_resumen_resultado(self, resultado):
         """Mostrar resumen inmediato del resultado"""
@@ -908,6 +907,8 @@ class ProgolStreamlitApp:
         st.subheader("Métricas Detalladas")
         st.json(validacion["metricas"])
         
+        # Análisis AI si está disponible
+        ai_disponible = False
         if "OPENAI_API_KEY" in st.secrets:
             ai_disponible = True
         elif hasattr(st.session_state, 'openai_api_key') and st.session_state.openai_api_key:
@@ -965,6 +966,7 @@ class ProgolStreamlitApp:
                                 st.exception(e)
         else:
             st.info("💡 Para habilitar corrección automática con AI, configura tu API key de OpenAI en el sidebar")
+
 def main():
     """Función principal para ejecutar la app"""
     app = ProgolStreamlitApp()
