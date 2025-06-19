@@ -541,3 +541,341 @@ Sugiere entre 10-15 cambios específicos para corregir los problemas."""
             self.logger.error(f"Error aplicando sugerencias: {e}")
             
         return portafolio_optimizado
+
+# Añadir estas funciones al final de models/ai_assistant.py
+
+    def debug_correccion_detallada(self, quiniela: Dict[str, Any], partidos: List[Dict[str, Any]], 
+                                  reglas_violadas: List[str]) -> Dict[str, Any]:
+        """
+        NUEVA FUNCIÓN: Debug detallado paso a paso de corrección de IA
+        """
+        if not self.enabled:
+            return {"status": "AI_DISABLED", "details": "OpenAI API key no disponible"}
+        
+        debug_info = {
+            "quiniela_original": quiniela.copy(),
+            "problemas_detectados": reglas_violadas,
+            "prompt_enviado": "",
+            "respuesta_ai_raw": "",
+            "respuesta_parseada": None,
+            "exito": False,
+            "errores": []
+        }
+        
+        try:
+            # 1. Preparar contexto detallado
+            contexto = self._preparar_contexto_debug_detallado(quiniela, partidos, reglas_violadas)
+            debug_info["prompt_enviado"] = contexto
+            
+            # 2. Llamada a la IA con logging detallado
+            self.logger.info(f"🤖 Enviando prompt a GPT-4 para {quiniela['id']}")
+            self.logger.debug(f"Prompt completo: {contexto[:500]}...")
+            
+            response = self.client.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=[
+                    {"role": "system", "content": self._get_system_prompt_debug()},
+                    {"role": "user", "content": contexto}
+                ],
+                temperature=0.1,  # Muy determinístico para debug
+                max_tokens=800
+            )
+            
+            ai_response_text = response.choices[0].message.content
+            debug_info["respuesta_ai_raw"] = ai_response_text
+            
+            self.logger.info(f"✅ Respuesta de IA recibida para {quiniela['id']}")
+            self.logger.debug(f"Respuesta completa: {ai_response_text}")
+            
+            # 3. Parsear respuesta con debug
+            resultado = self._parsear_respuesta_con_debug(ai_response_text, quiniela, debug_info)
+            debug_info["respuesta_parseada"] = resultado
+            
+            if resultado:
+                debug_info["exito"] = True
+                debug_info["quiniela_corregida"] = resultado
+                
+                # Validar que realmente mejora
+                problemas_antes = len(reglas_violadas)
+                problemas_despues = len(self._detectar_problemas_quiniela_debug(resultado))
+                debug_info["mejora"] = problemas_antes - problemas_despues
+                
+                self.logger.info(f"✅ Corrección exitosa: {problemas_antes} → {problemas_despues} problemas")
+            else:
+                debug_info["exito"] = False
+                debug_info["errores"].append("No se pudo parsear la respuesta")
+                self.logger.error(f"❌ No se pudo parsear respuesta para {quiniela['id']}")
+            
+        except Exception as e:
+            debug_info["exito"] = False
+            debug_info["errores"].append(str(e))
+            self.logger.error(f"❌ Error en debug de corrección: {e}")
+        
+        return debug_info
+
+    def _preparar_contexto_debug_detallado(self, quiniela: Dict[str, Any], 
+                                         partidos: List[Dict[str, Any]], 
+                                         reglas_violadas: List[str]) -> str:
+        """
+        Contexto SÚPER detallado para debug
+        """
+        # Información de partidos con nombres y clasificaciones
+        info_partidos = []
+        anclas_indices = []
+        
+        for i, partido in enumerate(partidos):
+            clasificacion = partido.get("clasificacion", "Neutro")
+            es_ancla = clasificacion == "Ancla"
+            
+            if es_ancla:
+                anclas_indices.append(i+1)
+            
+            info = f"P{i+1}: {partido['home'][:15]} vs {partido['away'][:15]}"
+            info += f" [{clasificacion}]"
+            info += f" (L:{partido['prob_local']:.3f}, E:{partido['prob_empate']:.3f}, V:{partido['prob_visitante']:.3f})"
+            
+            if es_ancla:
+                info += " ⚠️ NUNCA CAMBIAR - ES ANCLA"
+            elif clasificacion == "Divisor":
+                info += " 🔄 DIVISOR - Bueno para cambiar"
+            elif clasificacion == "TendenciaEmpate":
+                info += " ⚖️ TENDENCIA EMPATE"
+                
+            info_partidos.append(info)
+        
+        # Análisis DETALLADO de problemas
+        resultados_actuales = quiniela['resultados']
+        distribucion_actual = quiniela.get('distribución', {})
+        
+        problemas_detallados = []
+        
+        for regla in reglas_violadas:
+            if "empates" in regla.lower():
+                empates_actual = quiniela['empates']
+                if empates_actual < 4:
+                    problemas_detallados.append(f"EMPATES INSUFICIENTES: tiene {empates_actual}, necesita mínimo 4")
+                    problemas_detallados.append(f"  → Debe cambiar {4-empates_actual} resultados L/V a E")
+                elif empates_actual > 6:
+                    problemas_detallados.append(f"EMPATES EXCESIVOS: tiene {empates_actual}, máximo 6")
+                    problemas_detallados.append(f"  → Debe cambiar {empates_actual-6} empates E a L/V")
+                    
+            elif "concentracion" in regla.lower():
+                # Analizar QUÉ está concentrado
+                for signo in ['L', 'E', 'V']:
+                    count = distribucion_actual.get(signo, 0)
+                    porcentaje = (count / 14) * 100
+                    
+                    if count > 9:  # >70%
+                        problemas_detallados.append(f"CONCENTRACIÓN EXCESIVA de {signo}: {count}/14 ({porcentaje:.1f}%)")
+                        problemas_detallados.append(f"  → Máximo permitido: 9 ({signo}), debe cambiar {count-9} posiciones")
+                        
+                        # Sugerir qué cambiar
+                        posiciones_este_signo = [i+1 for i, r in enumerate(resultados_actuales) if r == signo]
+                        if len(posiciones_este_signo) > 9:
+                            problemas_detallados.append(f"  → {signo} está en posiciones: {posiciones_este_signo}")
+                
+                # Concentración inicial
+                primeros_3 = resultados_actuales[:3]
+                for signo in ['L', 'E', 'V']:
+                    count_inicial = primeros_3.count(signo)
+                    if count_inicial > 2:  # >60% de los primeros 3
+                        problemas_detallados.append(f"CONCENTRACIÓN INICIAL: {signo} aparece {count_inicial}/3 veces en primeros 3 partidos")
+                        problemas_detallados.append(f"  → Máximo 2 iguales en primeros 3 partidos")
+        
+        # Estado actual detallado
+        estado_actual = f"""
+QUINIELA ACTUAL: {','.join(resultados_actuales)}
+Distribución actual: L:{distribucion_actual.get('L', 0)}, E:{distribucion_actual.get('E', 0)}, V:{distribucion_actual.get('V', 0)}
+Empates actuales: {quiniela['empates']}
+
+RESULTADOS POR POSICIÓN:
+{chr(10).join(f"P{i+1}: {r} ({partidos[i]['home'][:12]} vs {partidos[i]['away'][:12]})" for i, r in enumerate(resultados_actuales))}
+"""
+
+        contexto = f"""TAREA DE CORRECCIÓN DETALLADA PARA DEBUG
+
+QUINIELA A CORREGIR: {quiniela['id']} (Tipo: {quiniela['tipo']})
+
+PROBLEMAS ESPECÍFICOS DETECTADOS:
+{chr(10).join(f"❌ {p}" for p in problemas_detallados)}
+
+{estado_actual}
+
+INFORMACIÓN DE PARTIDOS (NUNCA cambiar los marcados con ⚠️):
+{chr(10).join(info_partidos)}
+
+REGLAS OBLIGATORIAS:
+1. NUNCA cambiar partidos Ancla (posiciones: {anclas_indices})
+2. Debe tener entre 4-6 empates total
+3. Máximo 9 de cualquier signo L/E/V (≤70% de 14)
+4. Máximo 2 iguales en primeros 3 partidos (≤60%)
+
+ESTRATEGIA RECOMENDADA:
+- Identificar el problema principal (¿demasiados L?, ¿pocos empates?)
+- Buscar partidos NO-Ancla con probabilidad baja del resultado actual
+- Hacer cambios mínimos y específicos
+- Priorizar partidos Divisor para cambios
+
+EJEMPLO DE RAZONAMIENTO:
+"El problema es concentración de L (10/14). Debo cambiar 1 L a E o V.
+Mirando las probabilidades, P5 tiene L con solo 0.35 de prob_local.
+P5 no es Ancla, así que puedo cambiarlo. Como necesito más empates, cambio P5 de L a E."
+
+RESPUESTA REQUERIDA (JSON estricto, sin explicaciones):
+{{"resultados": ["L", "E", "V", "L", "E", "V", "L", "E", "V", "L", "E", "V", "L", "E"], "razonamiento": "Breve explicación del cambio realizado"}}"""
+
+        return contexto
+
+    def _get_system_prompt_debug(self) -> str:
+        """
+        System prompt específico para debug
+        """
+        return """Eres un experto en optimización de quinielas deportivas. Tu tarea es corregir quinielas que violan reglas específicas.
+
+CONTEXTO METODOLÓGICO:
+- Una quiniela son 14 resultados: L (Local gana), E (Empate), V (Visitante gana)
+- Distribución histórica objetivo: 38% L, 29% E, 33% V
+- Cada quiniela debe tener 4-6 empates
+- Concentración máxima: 70% del mismo signo (máximo 9 de 14)
+- Concentración inicial: máximo 60% iguales en primeros 3 (máximo 2 de 3)
+
+PARTIDOS ESPECIALES:
+- ANCLA: Partidos con alta probabilidad (>60%) - NUNCA se cambian
+- DIVISOR: Partidos equilibrados (40-60%) - Buenos para cambiar
+- TENDENCIA EMPATE: Favorecen el empate
+
+INSTRUCCIONES:
+1. Identifica el problema principal
+2. Encuentra partidos NO-Ancla para cambiar
+3. Haz el MÍNIMO de cambios necesarios
+4. Prioriza partidos con baja probabilidad del resultado actual
+5. Responde SOLO con JSON válido
+
+FORMATO DE RESPUESTA OBLIGATORIO:
+{"resultados": ["L", "E", "V", ...], "razonamiento": "Explicación breve"}
+
+¡NO agregues texto fuera del JSON!"""
+
+    def _parsear_respuesta_con_debug(self, respuesta: str, quiniela_original: Dict[str, Any], 
+                                   debug_info: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Parsing con debug detallado
+        """
+        debug_info["parsing_attempts"] = []
+        
+        # Limpiar respuesta
+        respuesta_limpia = respuesta.strip()
+        debug_info["respuesta_limpia"] = respuesta_limpia
+        
+        # Método 1: JSON completo con razonamiento
+        try:
+            import json
+            import re
+            
+            json_pattern = r'\{[^}]*"resultados"[^}]*\[[^\]]*\][^}]*\}'
+            json_match = re.search(json_pattern, respuesta_limpia, re.DOTALL)
+            
+            if json_match:
+                json_text = json_match.group()
+                debug_info["parsing_attempts"].append({"method": "json_completo", "text": json_text, "success": False})
+                
+                data = json.loads(json_text)
+                if "resultados" in data and len(data["resultados"]) == 14:
+                    resultados = [str(r).upper() for r in data["resultados"]]
+                    if all(r in ['L', 'E', 'V'] for r in resultados):
+                        debug_info["parsing_attempts"][-1]["success"] = True
+                        debug_info["razonamiento_ai"] = data.get("razonamiento", "Sin razonamiento")
+                        
+                        return self._crear_quiniela_corregida_debug(resultados, quiniela_original, debug_info)
+        except Exception as e:
+            debug_info["parsing_attempts"].append({"method": "json_completo", "error": str(e), "success": False})
+        
+        # Método 2: Solo array de resultados
+        try:
+            import re
+            array_pattern = r'\[([^\]]*)\]'
+            array_match = re.search(array_pattern, respuesta_limpia)
+            
+            if array_match:
+                array_content = array_match.group(1)
+                debug_info["parsing_attempts"].append({"method": "array_simple", "text": array_content, "success": False})
+                
+                # Extraer solo L, E, V
+                resultados = re.findall(r'[LEV]', array_content.upper())
+                if len(resultados) == 14:
+                    debug_info["parsing_attempts"][-1]["success"] = True
+                    return self._crear_quiniela_corregida_debug(resultados, quiniela_original, debug_info)
+        except Exception as e:
+            debug_info["parsing_attempts"].append({"method": "array_simple", "error": str(e), "success": False})
+        
+        # Método 3: Extraer todas las letras L/E/V
+        try:
+            all_letters = re.findall(r'[LEV]', respuesta_limpia.upper())
+            debug_info["parsing_attempts"].append({"method": "todas_las_letras", "resultados": all_letters, "success": False})
+            
+            if len(all_letters) >= 14:
+                resultados = all_letters[:14]
+                debug_info["parsing_attempts"][-1]["success"] = True
+                return self._crear_quiniela_corregida_debug(resultados, quiniela_original, debug_info)
+        except Exception as e:
+            debug_info["parsing_attempts"].append({"method": "todas_las_letras", "error": str(e), "success": False})
+        
+        return None
+
+    def _crear_quiniela_corregida_debug(self, resultados: List[str], quiniela_original: Dict[str, Any], 
+                                      debug_info: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Crear quiniela corregida con información de debug
+        """
+        quiniela_corregida = quiniela_original.copy()
+        quiniela_corregida["resultados"] = resultados
+        quiniela_corregida["empates"] = resultados.count("E")
+        quiniela_corregida["distribución"] = {
+            "L": resultados.count("L"),
+            "E": resultados.count("E"),
+            "V": resultados.count("V")
+        }
+        
+        # Análisis de cambios
+        resultados_originales = quiniela_original["resultados"]
+        cambios = []
+        
+        for i, (orig, nuevo) in enumerate(zip(resultados_originales, resultados)):
+            if orig != nuevo:
+                cambios.append(f"P{i+1}: {orig}→{nuevo}")
+        
+        debug_info["cambios_realizados"] = cambios
+        debug_info["num_cambios"] = len(cambios)
+        
+        return quiniela_corregida
+
+    def _detectar_problemas_quiniela_debug(self, quiniela: Dict[str, Any]) -> List[str]:
+        """
+        Detectar problemas con información detallada para debug
+        """
+        problemas = []
+        
+        # Empates
+        empates = quiniela.get("empates", 0)
+        if not (4 <= empates <= 6):
+            if empates < 4:
+                problemas.append(f"empates_insuficientes: {empates} < 4")
+            else:
+                problemas.append(f"empates_excesivos: {empates} > 6")
+        
+        # Concentración general
+        if "distribución" in quiniela:
+            distribucion = quiniela["distribución"]
+            for signo, count in distribucion.items():
+                if count > 9:  # >70%
+                    problemas.append(f"concentracion_general_{signo}: {count}/14 > 9")
+        
+        # Concentración inicial
+        if "resultados" in quiniela and len(quiniela["resultados"]) >= 3:
+            primeros_3 = quiniela["resultados"][:3]
+            for signo in ["L", "E", "V"]:
+                count_inicial = primeros_3.count(signo)
+                if count_inicial > 2:  # >60%
+                    problemas.append(f"concentracion_inicial_{signo}: {count_inicial}/3 > 2")
+        
+        return problemas

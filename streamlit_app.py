@@ -954,91 +954,210 @@ class ProgolStreamlitApp:
         else:
             st.warning("No se encontraron archivos exportados")
 
-    def mostrar_ventana_debug_ai(self):
-        """NUEVA FUNCIÓN: Ventana de debug para mostrar interacciones con AI"""
-        
-        with st.expander("🔍 **Debug AI - Ver Comunicación con la IA**", expanded=False):
-            
-            # Toggle para activar/desactivar debug
-            debug_ai_activo = st.toggle(
-                "Mostrar respuestas detalladas de la IA", 
-                value=st.session_state.get('debug_ai_activo', False),
-                help="Activa esto para ver exactamente qué dice la IA en cada corrección"
-            )
-            st.session_state.debug_ai_activo = debug_ai_activo
-            
-            if debug_ai_activo:
-                st.info("🤖 **Modo Debug AI Activado** - Las próximas respuestas de la IA se mostrarán aquí")
-                
-                # Mostrar historial de respuestas si existe
-                if 'ai_debug_responses' in st.session_state and st.session_state.ai_debug_responses:
-                    st.markdown("### 📝 Historial de Respuestas de la IA")
-                    
-                    for i, response in enumerate(st.session_state.ai_debug_responses):
-                        with st.container():
-                            col1, col2 = st.columns([1, 4])
-                            
-                            with col1:
-                                timestamp = response.get('timestamp', 'N/A')
-                                st.write(f"**{i+1}.** `{timestamp}`")
-                                
-                                quiniela_id = response.get('quiniela_id', 'N/A')
-                                st.write(f"**ID:** {quiniela_id}")
-                                
-                                success = response.get('success', False)
-                                if success:
-                                    st.success("✅ Éxito")
-                                else:
-                                    st.error("❌ Falló")
-                            
-                            with col2:
-                                problemas = response.get('problemas', [])
-                                if problemas:
-                                    st.write(f"**Problemas detectados:** {', '.join(problemas)}")
-                                
-                                # Mostrar prompt enviado
-                                if st.button(f"Ver Prompt Enviado #{i+1}", key=f"show_prompt_{i}"):
-                                    st.code(response.get('prompt', 'No disponible'), language='text')
-                                
-                                # Mostrar respuesta de la AI
-                                if st.button(f"Ver Respuesta AI #{i+1}", key=f"show_response_{i}"):
-                                    st.code(response.get('ai_response', 'No disponible'), language='json')
-                                
-                                # Mostrar resultado parseado
-                                resultado_parseado = response.get('parsed_result', None)
-                                if resultado_parseado:
-                                    st.write(f"**Resultado:** {resultado_parseado}")
-                                else:
-                                    st.write("**Resultado:** No se pudo parsear")
-                            
-                            st.divider()
-                    
-                    # Botón para limpiar historial
-                    if st.button("🗑️ Limpiar Historial de Debug"):
-                        st.session_state.ai_debug_responses = []
-                        st.rerun()
-                        
-                else:
-                    st.write("No hay interacciones con la IA todavía. Ejecuta una optimización para ver los datos.")
-            
-            # Estadísticas de API usage
-            if 'ai_usage_stats' in st.session_state:
-                stats = st.session_state.ai_usage_stats
-                
-                st.markdown("### 📊 Estadísticas de Uso de la IA")
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Total Llamadas", stats.get('total_calls', 0))
-                with col2:
-                    st.metric("Éxitos", stats.get('successful_calls', 0))
-                with col3:
-                    st.metric("Fallos", stats.get('failed_calls', 0))
-                with col4:
-                    costo_estimado = stats.get('total_calls', 0) * 0.002  # Estimación
-                    st.metric("Costo Est. USD", f"${costo_estimado:.3f}")
+# Reemplazar la función mostrar_ventana_debug_ai en streamlit_app.py con esta versión mejorada:
 
-    def tab_validacion(self):
-        """Tab para mostrar detalles de validación - CON DEBUG AI"""
+    def mostrar_ventana_debug_ai_mejorado(self):
+        """
+        NUEVA FUNCIÓN: Ventana de debug mejorada y más clara para la IA
+        """
+        
+        st.subheader("🤖 Debug de Comunicación con IA")
+        
+        # Control principal
+        if st.button("🔍 Activar Debug Detallado de IA", type="secondary"):
+            st.session_state.debug_ai_detallado = True
+            st.info("✅ Debug detallado activado. Los próximos usos de IA mostrarán información completa aquí.")
+        
+        # Mostrar estado actual
+        debug_activo = st.session_state.get('debug_ai_detallado', False)
+        if debug_activo:
+            st.success("🔍 **Debug de IA ACTIVO** - Se capturarán todos los detalles")
+        else:
+            st.info("ℹ️ Debug de IA inactivo - Actívalo arriba para ver detalles")
+        
+        # Mostrar historial si existe
+        if hasattr(st.session_state, 'ai_debug_detallado') and st.session_state.ai_debug_detallado:
+            self._mostrar_historial_debug_detallado()
+        
+        # Estadísticas de uso
+        if 'ai_usage_stats' in st.session_state:
+            self._mostrar_estadisticas_uso_ai()
+
+    def _mostrar_historial_debug_detallado(self):
+        """
+        Muestra el historial de debug de manera organizada
+        """
+        historial = st.session_state.get('ai_debug_detallado', [])
+        
+        if not historial:
+            st.info("No hay interacciones de debug todavía. Ejecuta una optimización con IA para ver datos.")
+            return
+        
+        st.markdown("### 📋 Historial de Interacciones con IA")
+        
+        # Filtros
+        col1, col2 = st.columns(2)
+        with col1:
+            mostrar_solo_exitosas = st.checkbox("Mostrar solo correcciones exitosas", value=False)
+        with col2:
+            mostrar_solo_fallos = st.checkbox("Mostrar solo fallos", value=False)
+        
+        # Filtrar historial
+        historial_filtrado = historial
+        if mostrar_solo_exitosas:
+            historial_filtrado = [h for h in historial if h.get('exito', False)]
+        elif mostrar_solo_fallos:
+            historial_filtrado = [h for h in historial if not h.get('exito', False)]
+        
+        # Mostrar cada interacción
+        for i, debug_info in enumerate(reversed(historial_filtrado[-10:])):  # Últimas 10
+            self._mostrar_interaccion_debug(debug_info, i)
+
+    def _mostrar_interaccion_debug(self, debug_info: dict, index: int):
+        """
+        Muestra una sola interacción de debug de manera clara
+        """
+        quiniela_id = debug_info.get('quiniela_original', {}).get('id', 'Unknown')
+        exito = debug_info.get('exito', False)
+        timestamp = debug_info.get('timestamp', 'N/A')
+        
+        # Header con estado
+        with st.expander(f"{'✅' if exito else '❌'} {quiniela_id} - {timestamp}", 
+                         expanded=(index == 0)):  # Solo expandir el más reciente
+            
+            # Información básica
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**📊 Información Básica**")
+                st.write(f"• **Quiniela:** {quiniela_id}")
+                st.write(f"• **Estado:** {'✅ Exitosa' if exito else '❌ Falló'}")
+                
+                problemas = debug_info.get('problemas_detectados', [])
+                if problemas:
+                    st.write("• **Problemas detectados:**")
+                    for problema in problemas:
+                        st.write(f"  - {problema}")
+                
+                mejora = debug_info.get('mejora', 0)
+                if mejora > 0:
+                    st.write(f"• **Mejora:** -{mejora} problemas")
+            
+            with col2:
+                st.markdown("**🔧 Cambios Realizados**")
+                cambios = debug_info.get('cambios_realizados', [])
+                if cambios:
+                    for cambio in cambios[:5]:  # Mostrar máximo 5
+                        st.write(f"• {cambio}")
+                    if len(cambios) > 5:
+                        st.write(f"• ... y {len(cambios)-5} cambios más")
+                else:
+                    st.write("No se realizaron cambios")
+                
+                # Razonamiento de la IA
+                razonamiento = debug_info.get('razonamiento_ai', '')
+                if razonamiento:
+                    st.write(f"**🧠 Razonamiento IA:** {razonamiento}")
+            
+            # Tabs para información detallada
+            tab1, tab2, tab3, tab4 = st.tabs(["📝 Prompt Enviado", "💬 Respuesta IA", "🔧 Parsing", "❌ Errores"])
+            
+            with tab1:
+                prompt = debug_info.get('prompt_enviado', 'No disponible')
+                st.code(prompt, language='text')
+            
+            with tab2:
+                respuesta = debug_info.get('respuesta_ai_raw', 'No disponible')
+                st.code(respuesta, language='json')
+            
+            with tab3:
+                parsing_attempts = debug_info.get('parsing_attempts', [])
+                if parsing_attempts:
+                    for j, attempt in enumerate(parsing_attempts):
+                        method = attempt.get('method', 'unknown')
+                        success = attempt.get('success', False)
+                        
+                        st.write(f"**Intento {j+1}: {method}** {'✅' if success else '❌'}")
+                        if 'error' in attempt:
+                            st.error(f"Error: {attempt['error']}")
+                        elif 'text' in attempt:
+                            st.code(attempt['text'][:200] + "..." if len(attempt['text']) > 200 else attempt['text'])
+                else:
+                    st.info("No hay información de parsing disponible")
+            
+            with tab4:
+                errores = debug_info.get('errores', [])
+                if errores:
+                    for error in errores:
+                        st.error(error)
+                else:
+                    st.success("No hay errores registrados")
+
+    def _mostrar_estadisticas_uso_ai(self):
+        """
+        Muestra estadísticas de uso de la IA
+        """
+        stats = st.session_state.ai_usage_stats
+        
+        st.markdown("### 📊 Estadísticas de Uso de IA")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total Llamadas", stats.get('total_calls', 0))
+        
+        with col2:
+            exitosas = stats.get('successful_calls', 0)
+            total = stats.get('total_calls', 1)
+            tasa_exito = (exitosas / total) * 100 if total > 0 else 0
+            st.metric("Tasa de Éxito", f"{tasa_exito:.1f}%")
+        
+        with col3:
+            st.metric("Fallos", stats.get('failed_calls', 0))
+        
+        with col4:
+            costo_estimado = stats.get('total_calls', 0) * 0.003  # Estimación conservadora
+            st.metric("Costo Est.", f"${costo_estimado:.3f}")
+
+    # También agregar esta función para integrar el debug detallado en el proceso de optimización
+    def ejecutar_optimizacion_con_debug_detallado(self, optimizer, progress_callback=None, forzar_ai=False):
+        """
+        NUEVA FUNCIÓN: Ejecutar optimización con debug detallado de IA
+        """
+        # Activar debug si está habilitado
+        if st.session_state.get('debug_ai_detallado', False):
+            st.session_state.ai_debug_detallado = []
+            
+            # Modificar el optimizador para usar debug detallado
+            if hasattr(optimizer, 'ai_assistant') and optimizer.ai_assistant.enabled:
+                original_corregir = optimizer.ai_assistant.corregir_quiniela_invalida
+                
+                def corregir_con_debug(quiniela, partidos, reglas_violadas):
+                    debug_info = optimizer.ai_assistant.debug_correccion_detallada(quiniela, partidos, reglas_violadas)
+                    debug_info['timestamp'] = time.strftime('%H:%M:%S')
+                    
+                    # Guardar en session_state
+                    if 'ai_debug_detallado' not in st.session_state:
+                        st.session_state.ai_debug_detallado = []
+                    st.session_state.ai_debug_detallado.append(debug_info)
+                    
+                    # Retornar resultado como siempre
+                    if debug_info.get('exito', False):
+                        return debug_info.get('quiniela_corregida')
+                    else:
+                        return None
+                
+                # Reemplazar temporalmente la función
+                optimizer.ai_assistant.corregir_quiniela_invalida = corregir_con_debug
+        
+        # Ejecutar optimización normal
+        return self.ejecutar_optimizacion_directo(optimizer, progress_callback, forzar_ai)
+
+    # Y finalmente, modificar el tab_validacion para usar la nueva función:
+    def tab_validacion_mejorado(self):
+        """
+        Tab de validación mejorado con debug de IA integrado
+        """
         st.header("📋 Validación del Portafolio")
 
         if 'resultado_optimizacion' not in st.session_state or not st.session_state.resultado_optimizacion.get("success"):
@@ -1054,8 +1173,65 @@ class ProgolStreamlitApp:
         else:
             st.error("❌ PORTAFOLIO INVÁLIDO - No cumple algunas reglas")
 
-        # *** NUEVA VENTANA DE DEBUG AI ***
-        self.mostrar_ventana_debug_ai()
+        # Mostrar ventana de debug mejorada
+        self.mostrar_ventana_debug_ai_mejorado()
+
+        # Resto del código de validación...
+        st.subheader("Detalle de Validaciones")
+        
+        validaciones = validacion.get("detalle_validaciones", {})
+        descripciones = {
+            "distribucion_global": "Distribución en rangos históricos (35-41% L, 25-33% E, 30-36% V)",
+            "empates_individuales": "4-6 empates por quiniela",
+            "concentracion_maxima": "≤70% concentración general, ≤60% en primeros 3 partidos",
+            "arquitectura_core_satelites": "4 Core + 26 Satélites en 13 pares",
+            "correlacion_jaccard": "Correlación Jaccard ≤ 0.57 entre pares de satélites",
+            "distribucion_divisores": "Distribución equilibrada de resultados"
+        }
+
+        for regla, cumple in validaciones.items():
+            with st.container():
+                col1, col2 = st.columns([1, 4])
+                with col1:
+                    if cumple:
+                        st.success("✅ CUMPLE")
+                    else:
+                        st.error("❌ FALLA")
+                with col2:
+                    st.write(f"**{regla.replace('_', ' ').title()}**")
+                    st.caption(descripciones.get(regla, "Regla sin descripción."))
+
+        # Botón para re-optimizar con debug detallado
+        ai_disponible = "OPENAI_API_KEY" in os.environ or ("OPENAI_API_KEY" in st.secrets) or st.session_state.get('openai_api_key')
+        
+        if ai_disponible and not es_valido:
+            st.markdown("---")
+            st.subheader("🤖 Re-optimización con Debug Detallado")
+            
+            if st.button("🔍 Re-optimizar con Debug Completo de IA", type="primary", use_container_width=True):
+                st.session_state.debug_ai_detallado = True
+                st.session_state.ejecutar_con_ai = True
+                st.rerun()
+
+    def tab_validacion(self):
+        """Tab para mostrar detalles de validación - CON DEBUG AI MEJORADO"""
+        st.header("📋 Validación del Portafolio")
+
+        if 'resultado_optimizacion' not in st.session_state or not st.session_state.resultado_optimizacion.get("success"):
+            st.info("🔄 Ejecuta la optimización primero")
+            return
+
+        resultado = st.session_state.resultado_optimizacion
+        validacion = resultado["validacion"]
+
+        es_valido = validacion.get("es_valido", False)
+        if es_valido:
+            st.success("✅ PORTAFOLIO VÁLIDO - Cumple todas las reglas obligatorias")
+        else:
+            st.error("❌ PORTAFOLIO INVÁLIDO - No cumple algunas reglas")
+
+        # *** CAMBIO CRÍTICO: Usar la versión MEJORADA ***
+        self.mostrar_ventana_debug_ai_mejorado()  # ← Cambió de mostrar_ventana_debug_ai()
 
         st.subheader("Detalle de Validaciones")
 
@@ -1096,7 +1272,8 @@ class ProgolStreamlitApp:
             
             if not es_valido:
                 st.error("❌ El portafolio actual tiene errores de validación")
-                if st.button("🔧 Re-optimizar con AI", type="primary", use_container_width=True):
+                if st.button("🔧 Re-optimizar con Debug Completo de IA", type="primary", use_container_width=True):
+                    st.session_state.debug_ai_detallado = True
                     st.session_state.ejecutar_con_ai = True
                     st.rerun()
 
