@@ -456,7 +456,6 @@ class ProgolStreamlitApp:
                 
         finally:
             # Limpiar archivo temporal
-            import os
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
