@@ -516,51 +516,429 @@ class ProgolStreamlitApp:
     def mostrar_resumen_ejecutivo(self, portafolio, metricas):
         """Mostrar resumen ejecutivo de resultados"""
         st.subheader("📋 Resumen Ejecutivo")
-        # ... (El resto de esta función se mantiene como en el archivo original)
-        pass
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total Quinielas", len(portafolio))
+        
+        with col2:
+            cores = len([q for q in portafolio if q["tipo"] == "Core"])
+            st.metric("Quinielas Core", cores)
+        
+        with col3:
+            satelites = len([q for q in portafolio if q["tipo"] == "Satelite"])
+            st.metric("Satélites", satelites)
+        
+        with col4:
+            empates_prom = metricas.get("empates_estadisticas", {}).get("promedio", 0)
+            st.metric("Empates Promedio", f"{empates_prom:.1f}")
+
+        # Distribución global
+        if "distribucion_global" in metricas:
+            dist = metricas["distribucion_global"]["porcentajes"]
+            st.subheader("Distribución Global del Portafolio")
+            
+            col_a, col_b, col_c = st.columns(3)
+            with col_a:
+                st.metric("Locales (L)", f"{dist['L']:.1%}", 
+                         delta=f"Objetivo: 35-41%")
+            with col_b:
+                st.metric("Empates (E)", f"{dist['E']:.1%}", 
+                         delta=f"Objetivo: 25-33%")
+            with col_c:
+                st.metric("Visitantes (V)", f"{dist['V']:.1%}", 
+                         delta=f"Objetivo: 30-36%")
 
 
     def crear_visualizaciones(self, portafolio, partidos, metricas):
-        """Crear visualizaciones de los resultados"""
+        """Crear visualizaciones de los resultados - VERSIÓN ROBUSTA"""
         st.subheader("📊 Visualizaciones")
 
-        col1, col2 = st.columns(2)
+        try:
+            col1, col2 = st.columns(2)
 
-        with col1:
-            fig_tipos = self.grafico_distribucion_tipos(portafolio)
-            st.plotly_chart(fig_tipos, use_container_width=True)
+            with col1:
+                try:
+                    fig_tipos = self.grafico_distribucion_tipos_seguro(portafolio)
+                    if fig_tipos:
+                        st.plotly_chart(fig_tipos, use_container_width=True)
+                    else:
+                        st.warning("No se pudo generar gráfico de distribución")
+                except Exception as e:
+                    st.error(f"Error en gráfico de tipos: {str(e)}")
+                    # Mostrar gráfico alternativo simple
+                    self.mostrar_tabla_distribucion_simple(portafolio)
 
-        with col2:
-            fig_empates = self.grafico_empates_distribucion(portafolio)
-            st.plotly_chart(fig_empates, use_container_width=True)
+            with col2:
+                try:
+                    fig_empates = self.grafico_empates_distribucion_seguro(portafolio)
+                    if fig_empates:
+                        st.plotly_chart(fig_empates, use_container_width=True)
+                    else:
+                        st.warning("No se pudo generar gráfico de empates")
+                except Exception as e:
+                    st.error(f"Error en gráfico de empates: {str(e)}")
+                    self.mostrar_estadisticas_empates_simple(portafolio)
 
-        fig_clasificacion = self.grafico_clasificacion_partidos(partidos)
-        st.plotly_chart(fig_clasificacion, use_container_width=True)
+            # Gráfico de clasificación - con manejo robusto
+            try:
+                fig_clasificacion = self.grafico_clasificacion_partidos_seguro(partidos)
+                if fig_clasificacion:
+                    st.plotly_chart(fig_clasificacion, use_container_width=True)
+                else:
+                    st.info("Clasificación de partidos no disponible")
+            except Exception as e:
+                st.error(f"Error en gráfico de clasificación: {str(e)}")
+                self.mostrar_clasificacion_simple(partidos)
 
-        satelites = [q for q in portafolio if q["tipo"] == "Satelite"]
-        if len(satelites) >= 4:
-            fig_correlacion = self.grafico_correlaciones_satelites(satelites)
-            st.plotly_chart(fig_correlacion, use_container_width=True)
+            # Correlaciones de satélites - opcional
+            try:
+                satelites = [q for q in portafolio if q.get("tipo") == "Satelite"]
+                if len(satelites) >= 4:
+                    fig_correlacion = self.grafico_correlaciones_satelites_seguro(satelites)
+                    if fig_correlacion:
+                        st.plotly_chart(fig_correlacion, use_container_width=True)
+            except Exception as e:
+                st.warning(f"No se pudieron mostrar correlaciones: {str(e)}")
 
-    def grafico_distribucion_tipos(self, portafolio):
-        """Gráfico de distribución L/E/V por tipo de quiniela"""
-        # ... (El resto de esta función se mantiene como en el archivo original)
-        pass
+        except Exception as e:
+            st.error(f"Error general en visualizaciones: {str(e)}")
+            st.info("Mostrando información básica en formato de tabla")
+            self.mostrar_resumen_basico_seguro(portafolio, partidos, metricas)
 
-    def grafico_empates_distribucion(self, portafolio):
-        """Histograma de distribución de empates"""
-        # ... (El resto de esta función se mantiene como en el archivo original)
-        pass
+    def grafico_distribucion_tipos_seguro(self, portafolio):
+        """Gráfico de distribución L/E/V por tipo de quiniela - VERSIÓN SEGURA"""
+        try:
+            if not portafolio or len(portafolio) == 0:
+                return None
 
-    def grafico_clasificacion_partidos(self, partidos):
-        """Gráfico de clasificación de partidos"""
-        # ... (El resto de esta función se mantiene como en el archivo original)
-        pass
+            # Validar que el portafolio tenga la estructura correcta
+            for q in portafolio:
+                if not isinstance(q, dict) or 'tipo' not in q or 'distribución' not in q:
+                    return None
 
-    def grafico_correlaciones_satelites(self, satelites):
-        """Mapa de calor de correlaciones entre satélites"""
-        # ... (El resto de esta función se mantiene como en el archivo original)
-        pass
+            # Agrupar datos por tipo con validación
+            datos_por_tipo = {}
+            
+            for quiniela in portafolio:
+                tipo = quiniela.get("tipo", "Desconocido")
+                dist = quiniela.get("distribución", {})
+                
+                if tipo not in datos_por_tipo:
+                    datos_por_tipo[tipo] = {"L": 0, "E": 0, "V": 0, "count": 0}
+                
+                # Validar que la distribución tenga las claves correctas
+                if isinstance(dist, dict):
+                    datos_por_tipo[tipo]["L"] += dist.get("L", 0)
+                    datos_por_tipo[tipo]["E"] += dist.get("E", 0)
+                    datos_por_tipo[tipo]["V"] += dist.get("V", 0)
+                    datos_por_tipo[tipo]["count"] += 1
+
+            if not datos_por_tipo:
+                return None
+
+            # Crear datos para el gráfico
+            tipos = list(datos_por_tipo.keys())
+            l_values = []
+            e_values = []
+            v_values = []
+
+            for tipo in tipos:
+                count = datos_por_tipo[tipo]["count"]
+                if count > 0:
+                    l_values.append(datos_por_tipo[tipo]["L"] / count)
+                    e_values.append(datos_por_tipo[tipo]["E"] / count)
+                    v_values.append(datos_por_tipo[tipo]["V"] / count)
+                else:
+                    l_values.append(0)
+                    e_values.append(0)
+                    v_values.append(0)
+
+            # Crear gráfico con validación
+            fig = go.Figure()
+            
+            fig.add_trace(go.Bar(
+                name='Locales (L)', 
+                x=tipos, 
+                y=l_values, 
+                marker_color='blue',
+                text=[f"{v:.1f}" for v in l_values],
+                textposition='auto'
+            ))
+            
+            fig.add_trace(go.Bar(
+                name='Empates (E)', 
+                x=tipos, 
+                y=e_values, 
+                marker_color='gray',
+                text=[f"{v:.1f}" for v in e_values],
+                textposition='auto'
+            ))
+            
+            fig.add_trace(go.Bar(
+                name='Visitantes (V)', 
+                x=tipos, 
+                y=v_values, 
+                marker_color='red',
+                text=[f"{v:.1f}" for v in v_values],
+                textposition='auto'
+            ))
+            
+            fig.update_layout(
+                title='Distribución Promedio L/E/V por Tipo de Quiniela',
+                xaxis_title='Tipo de Quiniela',
+                yaxis_title='Promedio de Resultados',
+                barmode='group',
+                showlegend=True,
+                height=400
+            )
+            
+            return fig
+
+        except Exception as e:
+            st.error(f"Error creando gráfico de distribución: {e}")
+            return None
+
+
+    def grafico_empates_distribucion_seguro(self, portafolio):
+        """Histograma de distribución de empates - VERSIÓN SEGURA"""
+        try:
+            if not portafolio or len(portafolio) == 0:
+                return None
+
+            # Extraer datos de empates con validación
+            empates_data = []
+            for q in portafolio:
+                if isinstance(q, dict) and 'empates' in q:
+                    empates = q.get('empates', 0)
+                    if isinstance(empates, (int, float)) and 0 <= empates <= 14:
+                        empates_data.append(int(empates))
+
+            if not empates_data:
+                return None
+
+            # Crear histograma
+            fig = go.Figure()
+            
+            fig.add_trace(go.Histogram(
+                x=empates_data,
+                nbinsx=max(1, max(empates_data) - min(empates_data) + 1),
+                marker_color='lightblue',
+                opacity=0.7,
+                name='Distribución de Empates'
+            ))
+
+            # Agregar líneas de referencia para rangos válidos
+            fig.add_vline(x=4, line_dash="dash", line_color="green", 
+                          annotation_text="Mín (4)")
+            fig.add_vline(x=6, line_dash="dash", line_color="green", 
+                          annotation_text="Máx (6)")
+
+            fig.update_layout(
+                title='Distribución de Empates por Quiniela',
+                xaxis_title='Número de Empates',
+                yaxis_title='Frecuencia',
+                showlegend=False,
+                height=400
+            )
+
+            return fig
+
+        except Exception as e:
+            st.error(f"Error creando gráfico de empates: {e}")
+            return None
+
+    def grafico_clasificacion_partidos_seguro(self, partidos):
+        """Gráfico de clasificación de partidos - VERSIÓN SEGURA"""
+        try:
+            if not partidos or len(partidos) == 0:
+                return None
+
+            # Contar clasificaciones con validación
+            clasificaciones = {}
+            for partido in partidos:
+                if isinstance(partido, dict):
+                    clase = partido.get("clasificacion", "Sin clasificar")
+                    if isinstance(clase, str):
+                        clasificaciones[clase] = clasificaciones.get(clase, 0) + 1
+
+            if not clasificaciones:
+                return None
+
+            # Crear gráfico de pastel
+            labels = list(clasificaciones.keys())
+            values = list(clasificaciones.values())
+            
+            fig = go.Figure()
+            
+            fig.add_trace(go.Pie(
+                labels=labels,
+                values=values,
+                hole=0.3,
+                marker_colors=['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57'][:len(labels)]
+            ))
+
+            fig.update_layout(
+                title='Clasificación de Partidos',
+                showlegend=True,
+                height=400
+            )
+
+            return fig
+
+        except Exception as e:
+            st.error(f"Error creando gráfico de clasificación: {e}")
+            return None
+
+
+    def grafico_correlaciones_satelites_seguro(self, satelites):
+        """Mapa de calor de correlaciones entre satélites - VERSIÓN SEGURA"""
+        try:
+            if not satelites or len(satelites) < 2:
+                return None
+
+            # Validar que los satélites tengan la estructura correcta
+            satelites_validos = []
+            for sat in satelites:
+                if (isinstance(sat, dict) and 
+                    'resultados' in sat and 
+                    isinstance(sat['resultados'], list) and 
+                    len(sat['resultados']) == 14):
+                    satelites_validos.append(sat)
+
+            if len(satelites_validos) < 2:
+                return None
+
+            # Calcular matriz de correlaciones
+            n_satelites = min(len(satelites_validos), 10)  # Limitar a 10 para performance
+            satelites_a_usar = satelites_validos[:n_satelites]
+            
+            correlaciones = np.zeros((n_satelites, n_satelites))
+            labels = []
+
+            for i, sat_i in enumerate(satelites_a_usar):
+                labels.append(sat_i.get("id", f"Sat-{i+1}"))
+                for j, sat_j in enumerate(satelites_a_usar):
+                    if i == j:
+                        correlaciones[i, j] = 1.0
+                    else:
+                        # Calcular correlación Jaccard
+                        resultados_i = sat_i["resultados"]
+                        resultados_j = sat_j["resultados"]
+                        
+                        coincidencias = sum(1 for a, b in zip(resultados_i, resultados_j) if a == b)
+                        correlaciones[i, j] = coincidencias / 14.0
+
+            # Crear mapa de calor
+            fig = go.Figure()
+            
+            fig.add_trace(go.Heatmap(
+                z=correlaciones,
+                x=labels,
+                y=labels,
+                colorscale='RdYlBu_r',
+                zmin=0,
+                zmax=1,
+                text=np.round(correlaciones, 2),
+                texttemplate="%{text}",
+                textfont={"size": 10},
+                showscale=True
+            ))
+
+            fig.update_layout(
+                title='Correlaciones Jaccard entre Satélites',
+                xaxis_title='Satélites',
+                yaxis_title='Satélites',
+                height=500
+            )
+
+            return fig
+
+        except Exception as e:
+            st.error(f"Error creando gráfico de correlaciones: {e}")
+            return None
+
+    def mostrar_tabla_distribucion_simple(self, portafolio):
+        """Mostrar distribución en formato de tabla simple"""
+        try:
+            datos_tipo = {}
+            for q in portafolio:
+                tipo = q.get('tipo', 'Desconocido')
+                if tipo not in datos_tipo:
+                    datos_tipo[tipo] = {'L': 0, 'E': 0, 'V': 0, 'count': 0}
+                
+                dist = q.get('distribución', {})
+                datos_tipo[tipo]['L'] += dist.get('L', 0)
+                datos_tipo[tipo]['E'] += dist.get('E', 0)
+                datos_tipo[tipo]['V'] += dist.get('V', 0)
+                datos_tipo[tipo]['count'] += 1
+
+            st.write("**Distribución por Tipo:**")
+            for tipo, datos in datos_tipo.items():
+                count = datos['count']
+                if count > 0:
+                    st.write(f"- **{tipo}**: L={datos['L']/count:.1f}, E={datos['E']/count:.1f}, V={datos['V']/count:.1f}")
+        except Exception as e:
+            st.write(f"Error mostrando distribución: {e}")
+
+    def mostrar_estadisticas_empates_simple(self, portafolio):
+        """Mostrar estadísticas de empates en formato simple"""
+        try:
+            empates = [q.get('empates', 0) for q in portafolio if 'empates' in q]
+            if empates:
+                st.write("**Estadísticas de Empates:**")
+                st.write(f"- Promedio: {np.mean(empates):.1f}")
+                st.write(f"- Mínimo: {min(empates)}")
+                st.write(f"- Máximo: {max(empates)}")
+        except Exception as e:
+            st.write(f"Error mostrando estadísticas de empates: {e}")
+
+    def mostrar_clasificacion_simple(self, partidos):
+        """Mostrar clasificación en formato simple"""
+        try:
+            clasificaciones = {}
+            for p in partidos:
+                clase = p.get('clasificacion', 'Sin clasificar')
+                clasificaciones[clase] = clasificaciones.get(clase, 0) + 1
+            
+            st.write("**Clasificación de Partidos:**")
+            for clase, count in clasificaciones.items():
+                st.write(f"- {clase}: {count} partidos")
+        except Exception as e:
+            st.write(f"Error mostrando clasificación: {e}")
+
+    def mostrar_resumen_basico_seguro(self, portafolio, partidos, metricas):
+        """Mostrar resumen básico cuando fallan los gráficos"""
+        try:
+            st.subheader("📊 Resumen Básico")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Total Quinielas", len(portafolio))
+                cores = len([q for q in portafolio if q.get("tipo") == "Core"])
+                st.metric("Quinielas Core", cores)
+            
+            with col2:
+                satelites = len([q for q in portafolio if q.get("tipo") == "Satelite"])
+                st.metric("Satélites", satelites)
+                empates_prom = np.mean([q.get('empates', 0) for q in portafolio if 'empates' in q])
+                st.metric("Empates Promedio", f"{empates_prom:.1f}")
+            
+            with col3:
+                st.metric("Partidos", len(partidos))
+                if metricas and 'distribucion_global' in metricas:
+                    dist = metricas['distribucion_global']['porcentajes']
+                    st.write(f"**Distribución Global:**")
+                    st.write(f"L: {dist.get('L', 0):.1%}")
+                    st.write(f"E: {dist.get('E', 0):.1%}")
+                    st.write(f"V: {dist.get('V', 0):.1%}")
+
+        except Exception as e:
+            st.error(f"Error en resumen básico: {e}")
+            st.write("Datos del portafolio no disponibles para mostrar")
+
     def mostrar_tabla_quinielas(self, portafolio, partidos):
         """Mostrar tabla interactiva de quinielas - CORREGIDA CON NOMBRES Y TIPO DE DATO PAR"""
         st.subheader("🎯 Quinielas Generadas")
