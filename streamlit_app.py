@@ -68,24 +68,35 @@ class ProgolStreamlitApp:
         # Sidebar con configuración
         self.crear_sidebar()
 
+        # Verificar si debemos ejecutar optimización con AI automáticamente
+        if hasattr(st.session_state, 'ejecutar_con_ai') and st.session_state.ejecutar_con_ai:
+            st.session_state.ejecutar_con_ai = False
+            # Ir directamente a optimización
+            tab_index = 1
+        else:
+            tab_index = 0
+
         # Contenido principal
-        tab1, tab2, tab3, tab4 = st.tabs([
+        tabs = st.tabs([
             "📊 Datos & Configuración",
             "🎯 Optimización",
             "📈 Resultados",
             "📋 Validación"
         ])
 
-        with tab1:
+        with tabs[0]:
             self.tab_datos_configuracion()
 
-        with tab2:
+        with tabs[1]:
             self.tab_optimizacion()
+            # Si venimos de validación, ejecutar automáticamente
+            if hasattr(st.session_state, 'ejecutar_con_ai'):
+                self.ejecutar_optimizacion(forzar_ai=True)
 
-        with tab3:
+        with tabs[2]:
             self.tab_resultados()
 
-        with tab4:
+        with tabs[3]:
             self.tab_validacion()
 
     def crear_sidebar(self):
@@ -341,51 +352,75 @@ class ProgolStreamlitApp:
         else:
             st.success(f"📄 Se optimizará usando **datos de: {archivo_origen}**")
 
-        # Botón principal de optimización
-        if st.button("🚀 Ejecutar Optimización Completa", type="primary", use_container_width=True):
-            self.ejecutar_optimizacion()
+        # Verificar si AI está disponible
+        ai_disponible = False
+        if "OPENAI_API_KEY" in st.secrets or (hasattr(st.session_state, 'openai_api_key') and st.session_state.openai_api_key):
+            ai_disponible = True
+            st.info("🤖 **AI disponible** - Se corregirán automáticamente errores de validación")
+        else:
+            st.warning("⚠️ **AI no disponible** - Solo se usará el algoritmo tradicional")
+
+        # Opciones de optimización
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Botón principal de optimización
+            if st.button("🚀 Ejecutar Optimización", type="primary", use_container_width=True):
+                self.ejecutar_optimizacion(forzar_ai=False)
+        
+        with col2:
+            # Botón de optimización con AI forzada
+            if ai_disponible:
+                if st.button("🤖 Optimizar con AI", type="secondary", use_container_width=True,
+                            help="Fuerza el uso de AI incluso si el resultado inicial es válido"):
+                    self.ejecutar_optimizacion(forzar_ai=True)
 
         # Mostrar progreso si está ejecutándose
         if 'optimizacion_ejecutando' in st.session_state and st.session_state.optimizacion_ejecutando:
             self.mostrar_progreso_optimizacion()
 
-    def ejecutar_optimizacion(self):
-        """Ejecutar el proceso completo de optimización"""
-        st.session_state.optimizacion_ejecutando = True
+    def ejecutar_optimizacion(self, forzar_ai=False):
+    """Ejecutar el proceso completo de optimización"""
+    st.session_state.optimizacion_ejecutando = True
+    st.session_state.forzar_ai = forzar_ai  # Guardar en session_state
 
-        progress_bar = st.progress(0, text="Inicializando...")
+    progress_bar = st.progress(0, text="Inicializando...")
 
-        try:
-            # Inicializar optimizador
-            progress_bar.progress(10, text="🔧 Inicializando optimizador...")
-            optimizer = ProgolOptimizer()
+    try:
+        # Inicializar optimizador
+        progress_bar.progress(10, text="🔧 Inicializando optimizador...")
+        optimizer = ProgolOptimizer()
 
-            def update_progress(progress_value, text_value):
-                display_progress = 30 + int(progress_value * 60)
-                progress_bar.progress(display_progress, text=text_value)
+        def update_progress(progress_value, text_value):
+            display_progress = 30 + int(progress_value * 60)
+            progress_bar.progress(display_progress, text=text_value)
 
-            # Ejecutar optimización
-            progress_bar.progress(30, text="⚙️ Ejecutando optimización GRASP-Annealing...")
+        # Ejecutar optimización
+        progress_bar.progress(30, text="⚙️ Ejecutando optimización GRASP-Annealing...")
+        
+        # Indicar si estamos usando AI
+        if forzar_ai and optimizer.ai_assistant.enabled:
+            progress_bar.progress(35, text="🤖 Optimización con asistencia AI activada...")
 
-            resultado = self.ejecutar_optimizacion_directo(optimizer, progress_callback=update_progress)
+        resultado = self.ejecutar_optimizacion_directo(optimizer, progress_callback=update_progress, forzar_ai=forzar_ai)
 
-            progress_bar.progress(100, text="✅ Optimización completada!")
+        progress_bar.progress(100, text="✅ Optimización completada!")
 
-            # Guardar resultados
-            st.session_state.resultado_optimizacion = resultado
-            st.session_state.optimizacion_ejecutando = False
+        # Guardar resultados
+        st.session_state.resultado_optimizacion = resultado
+        st.session_state.optimizacion_ejecutando = False
 
-            # Mostrar resumen inmediato
-            self.mostrar_resumen_resultado(resultado)
+        # Mostrar resumen inmediato
+        self.mostrar_resumen_resultado(resultado)
 
-        except Exception as e:
-            st.error(f"❌ Error en optimización: {e}")
-            st.session_state.optimizacion_ejecutando = False
+    except Exception as e:
+        st.error(f"❌ Error en optimización: {e}")
+        st.session_state.optimizacion_ejecutando = False
 
-            if st.session_state.debug_mode:
-                st.exception(e)
+        if st.session_state.debug_mode:
+            st.exception(e)
 
-    def ejecutar_optimizacion_directo(self, optimizer, progress_callback=None):
+    def ejecutar_optimizacion_directo(self, optimizer, progress_callback=None, forzar_ai=False):
         """Ejecutar optimización usando datos ya cargados"""
         
         # Configurar API key si está disponible
@@ -394,79 +429,63 @@ class ProgolStreamlitApp:
         elif hasattr(st.session_state, 'openai_api_key') and st.session_state.openai_api_key:
             os.environ["OPENAI_API_KEY"] = st.session_state.openai_api_key
         
-        # Obtener datos de session_state
+        # Usar el método procesar_concurso del optimizer que ahora acepta forzar_ai
         datos_partidos = st.session_state.datos_partidos
-
-        # PASO 1: Validación
-        es_valido, errores = optimizer.data_validator.validar_estructura(datos_partidos)
-        if not es_valido:
-            raise ValueError(f"Datos inválidos: {errores}")
-
-        # PASO 2: Clasificación y calibración
-        partidos_calibrados = optimizer.calibrator.calibrar_concurso_completo(datos_partidos)
-
-        # Aplicar clasificación después de calibración
-        partidos_clasificados = []
-        for i, partido_calibrado in enumerate(partidos_calibrados):
-            clasificacion = optimizer.classifier.clasificar_partido(partido_calibrado)
+        
+        # Guardar temporalmente en archivo para el optimizer
+        import tempfile
+        import pandas as pd
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as tmp:
+            df = pd.DataFrame(datos_partidos)
+            df.to_csv(tmp.name, index=False)
+            temp_path = tmp.name
+        
+        try:
+            # Ejecutar con el método principal que incluye AI
+            resultado = optimizer.procesar_concurso(
+                archivo_datos=temp_path,
+                concurso_id=st.session_state.concurso_id,
+                forzar_ai=forzar_ai
+            )
             
-            partido_final = {
-                **partido_calibrado,
-                "id": i,
-                "clasificacion": clasificacion
-            }
-            partidos_clasificados.append(partido_final)
-
-        # PASO 3: Generar Core
-        quinielas_core = optimizer.core_generator.generar_quinielas_core(partidos_clasificados)
-
-        # PASO 4: Generar Satélites
-        quinielas_satelites = optimizer.satellite_generator.generar_pares_satelites(
-            partidos_clasificados, 26
-        )
-
-        # PASO 5: Optimizar
-        portafolio_inicial = quinielas_core + quinielas_satelites
-        portafolio_optimizado = optimizer.optimizer.optimizar_portafolio_grasp_annealing(
-            portafolio_inicial, partidos_clasificados, progress_callback=progress_callback
-        )
-
-        # PASO 6: Validar
-        resultado_validacion = optimizer.portfolio_validator.validar_portafolio_completo(
-            portafolio_optimizado
-        )
-
-        # PASO 7: Exportar
-        archivos_exportados = optimizer.exporter.exportar_portafolio_completo(
-            portafolio_optimizado,
-            partidos_clasificados,
-            resultado_validacion["metricas"],
-            st.session_state.concurso_id
-        )
-
-        return {
-            "portafolio": portafolio_optimizado,
-            "partidos": partidos_clasificados,
-            "validacion": resultado_validacion,
-            "metricas": resultado_validacion["metricas"],
-            "archivos_exportados": archivos_exportados,
-            "concurso_id": st.session_state.concurso_id,
-            "ai_disponible": hasattr(optimizer, 'ai_assistant') and optimizer.ai_assistant.enabled
-        }
+            if resultado["success"]:
+                return resultado
+            else:
+                raise Exception(resultado.get("error", "Error desconocido"))
+                
+        finally:
+            # Limpiar archivo temporal
+            import os
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
 
     def mostrar_resumen_resultado(self, resultado):
         """Mostrar resumen inmediato del resultado"""
-        st.success("🎉 ¡Optimización completada exitosamente!")
+        
+        # Verificar si la optimización fue exitosa
+        if resultado.get("success", False):
+            st.success("🎉 ¡Optimización completada exitosamente!")
+        else:
+            st.error("❌ Error durante la optimización")
+            return
 
-        col1, col2, col3, col4 = st.columns(4)
+        # Mostrar si se usó AI
+        if resultado.get("ai_utilizada", False):
+            st.info("🤖 **AI fue utilizada** para corregir problemas de validación")
+
+        col1, col2, col3, col4, col5 = st.columns(5)
 
         with col1:
             st.metric("Quinielas Generadas", len(resultado["portafolio"]))
 
         with col2:
             es_valido = resultado["validacion"]["es_valido"]
-            st.metric("Validación", "✅ VÁLIDO" if es_valido else "❌ INVÁLIDO")
+            if es_valido:
+                st.metric("Validación", "✅ VÁLIDO", delta="Cumple todas las reglas")
+            else:
+                st.metric("Validación", "❌ INVÁLIDO", delta="Revisa la pestaña Validación")
 
         with col3:
             cores = len([q for q in resultado["portafolio"] if q["tipo"] == "Core"])
@@ -475,6 +494,48 @@ class ProgolStreamlitApp:
         with col4:
             satelites = len([q for q in resultado["portafolio"] if q["tipo"] == "Satelite"])
             st.metric("Satélites", satelites)
+        
+        with col5:
+            empates_prom = resultado["metricas"]["empates_estadisticas"]["promedio"]
+            st.metric("Empates Promedio", f"{empates_prom:.1f}")
+
+        # Si no es válido, mostrar resumen de problemas
+        if not es_valido:
+            st.warning("⚠️ **El portafolio tiene problemas de validación**")
+            
+            # Mostrar qué reglas fallan
+            problemas = []
+            for regla, cumple in resultado["validacion"]["detalle_validaciones"].items():
+                if not cumple:
+                    problemas.append(regla.replace('_', ' ').title())
+            
+            if problemas:
+                st.markdown("**Reglas que fallan:**")
+                for problema in problemas:
+                    st.markdown(f"- ❌ {problema}")
+            
+            # Sugerir usar AI si no se usó
+            if not resultado.get("ai_utilizada", False):
+                ai_disponible = "OPENAI_API_KEY" in st.secrets or hasattr(st.session_state, 'openai_api_key')
+                if ai_disponible:
+                    st.info("💡 **Sugerencia**: Intenta optimizar con AI para corregir estos problemas")
+                else:
+                    st.warning("⚠️ Configura tu API key de OpenAI para habilitar correcciones automáticas")
+        else:
+            # Mostrar estadísticas positivas
+            st.success("✅ **Todas las reglas de validación cumplidas**")
+            
+            # Mostrar distribución
+            dist = resultado["metricas"]["distribucion_global"]["porcentajes"]
+            st.markdown(f"""
+            **Distribución conseguida:**
+            - Locales: {dist['L']:.1%} (objetivo: 35-41%)
+            - Empates: {dist['E']:.1%} (objetivo: 25-33%)
+            - Visitantes: {dist['V']:.1%} (objetivo: 30-36%)
+            """)
+        
+        # Botón para ver detalles
+        st.info("📊 Ve a las pestañas **Resultados** y **Validación** para más detalles")
 
     def mostrar_progreso_optimizacion(self):
         """Mostrar progreso durante la optimización"""
@@ -846,7 +907,7 @@ class ProgolStreamlitApp:
         # Métricas detalladas
         st.subheader("Métricas Detalladas")
         st.json(validacion["metricas"])
-        ai_disponible = False
+        
         if "OPENAI_API_KEY" in st.secrets:
             ai_disponible = True
         elif hasattr(st.session_state, 'openai_api_key') and st.session_state.openai_api_key:
@@ -854,19 +915,40 @@ class ProgolStreamlitApp:
 
         if ai_disponible:
             st.markdown("---")
-            st.subheader("🤖 Análisis Inteligente del Portafolio")
+            st.subheader("🤖 Asistente AI")
             
-            col1, col2 = st.columns([3, 1])
+            # Verificar si se usó AI en la optimización
+            if resultado.get("ai_utilizada"):
+                st.success("✅ AI fue utilizada automáticamente durante la optimización")
             
-            with col1:
-                st.info("La AI puede analizar tu portafolio y sugerir mejoras específicas")
+            # Si el portafolio no es válido, mostrar opción de re-optimizar
+            if not es_valido:
+                st.error("❌ El portafolio actual tiene errores de validación")
+                
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    st.markdown("""
+                    **Errores detectados:**
+                    """)
+                    for regla, cumple in validaciones.items():
+                        if not cumple:
+                            st.markdown(f"- ❌ {regla.replace('_', ' ').title()}")
+                
+                with col2:
+                    if st.button("🔧 Re-optimizar con AI", type="primary", use_container_width=True):
+                        # Cambiar a la pestaña de optimización y ejecutar con AI
+                        st.session_state.tab_activa = "optimizacion"
+                        st.session_state.ejecutar_con_ai = True
+                        st.rerun()
             
-            with col2:
-                if st.button("🔍 Analizar con AI", type="primary", use_container_width=True):
+            # Opción de análisis detallado
+            with st.expander("📊 Análisis Detallado con AI"):
+                if st.button("Analizar Portafolio"):
                     with st.spinner("Analizando con AI..."):
                         try:
                             from models.ai_assistant import ProgolAIAssistant
-                            ai_assistant = ProgolAIAssistant()  # No necesita API key, la toma de env/secrets
+                            ai_assistant = ProgolAIAssistant()
                             
                             if ai_assistant.enabled:
                                 analisis = ai_assistant.validar_y_explicar_portafolio(
@@ -874,33 +956,15 @@ class ProgolStreamlitApp:
                                     resultado["partidos"]
                                 )
                                 
-                                # Mostrar análisis
-                                if analisis["valido"]:
-                                    st.success("✅ El portafolio es válido según la metodología")
-                                else:
-                                    st.error("❌ El portafolio tiene problemas de validación")
-                                
-                                # Mostrar explicación detallada
-                                st.markdown("**Análisis Detallado:**")
+                                st.markdown("**Análisis AI:**")
                                 st.markdown(analisis["explicacion"])
-                                
-                                # Botón para solicitar optimización AI
-                                if not analisis["valido"]:
-                                    if st.button("🔧 Aplicar Corrección AI"):
-                                        with st.spinner("Aplicando correcciones con AI..."):
-                                            # Re-ejecutar optimización con AI activa
-                                            st.info("Re-ejecutando optimización con asistencia AI...")
-                                            # Aquí podrías llamar nuevamente a ejecutar_optimizacion()
-                                            st.rerun()
-                            else:
-                                st.warning("AI no pudo inicializarse correctamente")
                                 
                         except Exception as e:
                             st.error(f"Error en análisis AI: {e}")
                             if st.session_state.debug_mode:
                                 st.exception(e)
         else:
-            st.info("💡 Para habilitar análisis con AI, configura tu API key de OpenAI en el sidebar")
+            st.info("💡 Para habilitar corrección automática con AI, configura tu API key de OpenAI en el sidebar")
 def main():
     """Función principal para ejecutar la app"""
     app = ProgolStreamlitApp()
