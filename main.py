@@ -102,30 +102,56 @@ class ProgolOptimizer:
             # --- SELECCIÓN DE MÉTODO DE OPTIMIZACIÓN ---
             if method == "hybrid":
                 self.logger.info("PASO 4-6: Ejecutando optimización Híbrida (IP + Annealing)...")
-                partidos_df = pd.DataFrame(partidos_procesados)
-                hybrid_opt = HybridOptimizer(partidos_df)
-                portafolio_optimizado = hybrid_opt.generate_portfolio()
-                if not portafolio_optimizado:
-                     raise RuntimeError("El optimizador Híbrido no pudo generar un portafolio.")
-            else: # Método 'legacy'
-                self.logger.info("PASO 4: Generando 4 quinielas Core (Método Heredado)...")
-                core_generator = CoreGenerator()
-                quinielas_core = core_generator.generar_quinielas_core(partidos_procesados)
-                
-                self.logger.info("PASO 5: Generando 26 satélites en pares (Método Heredado)...")
-                satellite_generator = SatelliteGenerator()
-                quinielas_satelites = satellite_generator.generar_pares_satelites(
-                    partidos_procesados, 26
-                )
-                
-                self.logger.info("PASO 6: Ejecutando optimización GRASP-Annealing (Heredado)...")
-                portafolio_inicial = quinielas_core + quinielas_satelites
-                portafolio_optimizado = self.legacy_optimizer.optimizar_portafolio_grasp_annealing(
-                    portafolio_inicial, partidos_procesados
-                )
-
+                try:
+                    # CORRECCIÓN: Importación condicional para evitar errores
+                    from portfolio.hybrid_optimizer import HybridOptimizer
+                    
+                    partidos_df = pd.DataFrame(partidos_procesados)
+                    hybrid_opt = HybridOptimizer(partidos_df)
+                    portafolio_optimizado = hybrid_opt.generate_portfolio()
+                    
+                    if not portafolio_optimizado:
+                        self.logger.warning("El optimizador Híbrido falló, usando método heredado como fallback")
+                        method = "legacy"
+                        
+                except ImportError as e:
+                    self.logger.error(f"Error importando HybridOptimizer: {e}")
+                    self.logger.info("Usando método heredado como fallback")
+                    method = "legacy"
+                except Exception as e:
+                    self.logger.error(f"Error en optimizador híbrido: {e}")
+                    self.logger.info("Usando método heredado como fallback") 
+                    method = "legacy"
             
-            # PASO 7: CORRECCIÓN AGRESIVA CON AI
+            # Método 'legacy' o fallback
+            if method == "legacy" or not portafolio_optimizado:
+                self.logger.info("PASO 4: Generando 4 quinielas Core (Método Heredado)...")
+                
+                try:
+                    core_generator = CoreGenerator()
+                    quinielas_core = core_generator.generar_quinielas_core(partidos_procesados)
+                    
+                    self.logger.info("PASO 5: Generando 26 satélites en pares (Método Heredado)...")
+                    satellite_generator = SatelliteGenerator()
+                    quinielas_satelites = satellite_generator.generar_pares_satelites(
+                        partidos_procesados, 26
+                    )
+                    
+                    self.logger.info("PASO 6: Ejecutando optimización GRASP-Annealing (Heredado)...")
+                    portafolio_inicial = quinielas_core + quinielas_satelites
+                    portafolio_optimizado = self.legacy_optimizer.optimizar_portafolio_grasp_annealing(
+                        portafolio_inicial, partidos_procesados
+                    )
+                    
+                except Exception as e:
+                    self.logger.error(f"Error en método heredado: {e}")
+                    raise RuntimeError(f"Ambos métodos de optimización fallaron: {e}")
+
+            # Verificar que tenemos un portafolio válido
+            if not portafolio_optimizado:
+                raise RuntimeError("No se pudo generar un portafolio válido con ningún método")
+            
+            # PASO 7: CORRECCIÓN AGRESIVA CON AI (resto del código igual...)
             validacion_inicial = self.portfolio_validator.validar_portafolio_completo(portafolio_optimizado)
             
             ai_fue_utilizada = False
@@ -185,7 +211,8 @@ class ProgolOptimizer:
                 "estadisticas_clasificacion": stats_clasificacion,
                 "archivos_exportados": archivos_exportados,
                 "concurso_id": concurso_id,
-                "ai_utilizada": ai_fue_utilizada
+                "ai_utilizada": ai_fue_utilizada,
+                "metodo_usado": method  # NUEVO: Indicar qué método se usó finalmente
             }
             
             return resultado

@@ -39,8 +39,9 @@ class GRASPAnnealing:
             self.logger.debug("Asistente AI no disponible")
 
     def _resultado_a_clave(self, resultado: str) -> str:
+        """Convierte resultado a clave de probabilidad - CORREGIDO"""
         mapeo = {"L": "local", "E": "empate", "V": "visitante"}
-        return mapeo.get(resultado, "")
+        return mapeo.get(resultado, "local")
 
     def optimizar_portafolio_grasp_annealing(self, quinielas_iniciales: List[Dict[str, Any]],
                                            partidos: List[Dict[str, Any]], progress_callback=None) -> List[Dict[str, Any]]:
@@ -363,8 +364,15 @@ class GRASPAnnealing:
         return resultado
 
     def _calcular_prob_11_montecarlo_rapido(self, resultados: List[str], partidos: List[Dict[str, Any]]) -> float:
+        """CORREGIDO: Cálculo rápido de probabilidad ≥11 aciertos"""
         num_simulaciones = 1000
-        prob_acierto = np.array([partidos[i][f"prob_{self._resultado_a_clave(res)}"] for i, res in enumerate(resultados)])
+        
+        # CORRECCIÓN: Mapeo correcto de nombres
+        prob_acierto = np.array([
+            partidos[i][f"prob_{self._resultado_a_clave(res)}"] 
+            for i, res in enumerate(resultados)
+        ])
+        
         simulaciones = np.random.rand(num_simulaciones, 14)
         aciertos = np.sum(simulaciones < prob_acierto, axis=1)
         aciertos_11_plus = np.sum(aciertos >= 11)

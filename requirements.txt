@@ -1,4 +1,4 @@
-# requirements.txt - Progol Optimizer v2.0 con AI
+# requirements.txt - Progol Optimizer v2.0 con AI y Optimizador Híbrido
 # Dependencias core (originales)
 streamlit>=1.28.0
 pandas>=1.5.0
@@ -14,7 +14,7 @@ pdfplumber>=0.9.0          # Parser PDF alternativo (fallback)
 # NUEVA dependencia para AI
 openai>=1.0.0              # API de OpenAI para asistente inteligente
 
-# NUEVA dependencia para Optimizador Híbrido
+# NUEVA dependencia para Optimizador Híbrido - CRÍTICA
 ortools>=9.8               # Solver de Google para Programación Entera
 
 # Dependencias opcionales (instalar si están disponibles)
