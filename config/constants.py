@@ -58,6 +58,16 @@ PROGOL_CONFIG = {
         "correlacion_jaccard_max": 0.57
     },
     
+    # NUEVA SECCIÓN: Configuración para el optimizador Híbrido
+    "HYBRID_OPTIMIZER": {
+      "solver": "CP-SAT",             # Opciones: CP-SAT, CBC, GUROBI
+      "max_time_in_seconds": 120.0,     # Límite de tiempo para el solver IP
+      "temperature_initial": 1.0,       # Temperatura inicial para Annealing
+      "temperature_cooling_factor": 0.99, # Factor de enfriamiento
+      "annealing_iterations": 20000,    # Iteraciones de Simulated Annealing
+      "grasp_penalty": 1000             # Penalización por violar restricciones suaves
+    },
+    
     # Logging y debug
     "DEBUG": True,
     "LOG_LEVEL": "INFO"
