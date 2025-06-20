@@ -200,9 +200,9 @@ class ProgolStreamlitApp:
             if st.button("🎲 Usar Datos de Ejemplo", type="secondary"):
                 with st.spinner("Generando datos de ejemplo con Anclas garantizadas..."):
                     try:
-                        from data.loader import EnhancedDataLoader
-                        loader = EnhancedDataLoader()
-                        datos_ejemplo = loader._generar_datos_ejemplo_mejorados()
+                        from data.loader import DataLoader
+                        loader = DataLoader()
+                        datos_ejemplo = loader._generar_datos_ejemplo()
                         st.session_state.datos_partidos = datos_ejemplo
                         st.session_state.archivo_origen = "datos_ejemplo_corregidos"
                         st.success(f"✅ Generados {len(datos_ejemplo)} partidos de ejemplo con Anclas garantizadas")
@@ -253,8 +253,8 @@ class ProgolStreamlitApp:
                                 prob_visitante /= total
                         else:
                             # Generar probabilidades realistas si no están en CSV
-                            from data.loader import EnhancedDataLoader
-                            loader = EnhancedDataLoader()
+                            from data.loader import DataLoader
+                            loader = DataLoader()
                             prob_local, prob_empate, prob_visitante = loader._generar_probabilidades_balanceadas_por_partido(idx)
 
                         partido = {
