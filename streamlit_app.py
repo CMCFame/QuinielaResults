@@ -1,4 +1,4 @@
-# streamlit_app.py
+# streamlit_app.py - CORREGIDO
 """
 Progol Optimizer - Flujo Paso a Paso Simplificado
 Interfaz que permite debuggear cada componente por separado
@@ -14,6 +14,7 @@ from pathlib import Path
 import logging
 import tempfile
 import numpy as np
+from typing import List, Dict, Any  # CORRECCIÓN 1: Import faltante
 
 # Mantener todos los imports existentes
 current_dir = Path(__file__).parent
@@ -383,7 +384,7 @@ class StepByStepProgolApp:
                 for i, p in enumerate(partidos)
             ])
             
-            # Colorear por clasificación
+            # Colorear por clasificación - CORRECCIÓN 3: Usar .map en lugar de .applymap
             def color_clasificacion(val):
                 colors = {
                     "Ancla": "background-color: #90EE90",
@@ -393,7 +394,7 @@ class StepByStepProgolApp:
                 }
                 return colors.get(val, "")
             
-            styled_df = detalle_df.style.applymap(color_clasificacion, subset=['Clasificación'])
+            styled_df = detalle_df.style.map(color_clasificacion, subset=['Clasificación'])
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
             # Verificar si hay suficientes anclas
@@ -524,112 +525,113 @@ class StepByStepProgolApp:
                 st.success("✅ Todas las quinielas Core cumplen reglas básicas")
             
             st.success("✅ Generación completada - Procede al **PASO 4: Validación**")
-    
+
+    # CORRECCIÓN 2: Indentación correcta - esta función debe estar al nivel de la clase
     def paso_4_validacion(self):
-            """PASO 4: Validación regla por regla CON DEBUG DETALLADO"""
-            st.header("✅ PASO 4: Validación del Portafolio")
-            st.markdown("**Objetivo**: Validar cada regla por separado para identificar problemas específicos")
-            
-            # Verificar prerequisitos
-            if 'quinielas_generadas' not in st.session_state:
-                st.warning("⚠️ Primero completa el **PASO 3: Generación**")
-                return
-            
-            st.success("✅ Prerequisitos cumplidos")
-            
-            # Botón para validar
-            if st.button("▶️ Ejecutar Validación Completa", type="primary"):
-                with st.spinner("Validando portafolio..."):
-                    try:
-                        quinielas = st.session_state.quinielas_generadas
-                        
-                        # Ejecutar validación usando el validador existente
-                        resultado_validacion = self.validator.validar_portafolio_completo(quinielas)
-                        
-                        # Guardar resultados
-                        st.session_state.validacion_completa = resultado_validacion
-                        
-                        st.success("✅ Validación completada")
-                        
-                    except Exception as e:
-                        st.error(f"❌ Error en validación: {e}")
-                        st.exception(e)
-            
-            # Mostrar resultados de validación
-            if 'validacion_completa' in st.session_state:
-                st.markdown("---")
-                validacion = st.session_state.validacion_completa
-                
-                # Estado general
-                if validacion['es_valido']:
-                    st.success("🎉 **PORTAFOLIO COMPLETAMENTE VÁLIDO**")
-                else:
-                    st.error("❌ **PORTAFOLIO INVÁLIDO** - Revisa reglas específicas")
-                
-                # Detalle regla por regla
-                st.subheader("📋 Detalle por Regla")
-                
-                reglas = validacion['detalle_validaciones']
-                descripciones = {
-                    "distribucion_global": "Distribución global en rangos históricos (35-41% L, 25-33% E, 30-36% V)",
-                    "empates_individuales": "4-6 empates por quiniela individual",
-                    "concentracion_maxima": "≤70% concentración general, ≤60% en primeros 3 partidos",
-                    "arquitectura_core_satelites": "Arquitectura correcta (actualmente solo Core)",
-                    "correlacion_jaccard": "Correlación entre pares ≤ 0.57 (no aplica para solo Core)",
-                    "distribucion_divisores": "Distribución equilibrada de resultados"
-                }
-                
-                for regla, cumple in reglas.items():
-                    col1, col2 = st.columns([1, 4])
+        """PASO 4: Validación regla por regla CON DEBUG DETALLADO"""
+        st.header("✅ PASO 4: Validación del Portafolio")
+        st.markdown("**Objetivo**: Validar cada regla por separado para identificar problemas específicos")
+        
+        # Verificar prerequisitos
+        if 'quinielas_generadas' not in st.session_state:
+            st.warning("⚠️ Primero completa el **PASO 3: Generación**")
+            return
+        
+        st.success("✅ Prerequisitos cumplidos")
+        
+        # Botón para validar
+        if st.button("▶️ Ejecutar Validación Completa", type="primary"):
+            with st.spinner("Validando portafolio..."):
+                try:
+                    quinielas = st.session_state.quinielas_generadas
                     
-                    with col1:
-                        if cumple:
-                            st.success("✅ CUMPLE")
-                        else:
-                            st.error("❌ FALLA")
+                    # Ejecutar validación usando el validador existente
+                    resultado_validacion = self.validator.validar_portafolio_completo(quinielas)
                     
-                    with col2:
-                        st.write(f"**{regla.replace('_', ' ').title()}**")
-                        st.caption(descripciones.get(regla, "Sin descripción"))
-                        
-                        # Mostrar detalles específicos para reglas que fallan
-                        if not cumple:
-                            if regla == "distribucion_global":
-                                self._mostrar_detalle_distribucion_global(validacion)
-                            elif regla == "empates_individuales":
-                                self._mostrar_detalle_empates_individuales()
-                            elif regla == "concentracion_maxima":
-                                self._mostrar_detalle_concentracion()
-                            elif regla == "distribucion_divisores":
-                                self._mostrar_detalle_distribucion_divisores()
-                
-                # NUEVA SECCIÓN: Debug detallado con sugerencias de corrección
-                st.markdown("---")
-                st.subheader("🔧 Debug Detallado y Sugerencias de Corrección")
-                
-                quinielas = st.session_state.quinielas_generadas
-                self._mostrar_debug_completo_quinielas(quinielas, validacion)
-                
-                # Resumen con próximos pasos
-                st.markdown("---")
-                st.subheader("🎯 Próximos Pasos")
-                
-                if validacion['es_valido']:
-                    st.success("🎉 **¡Felicitaciones!** Tu portafolio Core es completamente válido.")
-                    st.info("💡 **Siguientes opciones:**")
-                    st.info("• Agregar satélites para completar las 30 quinielas")
-                    st.info("• Optimizar con GRASP-Annealing")
-                    st.info("• Exportar las quinielas Core actuales")
-                else:
-                    st.error("🔧 **Se requieren correcciones:**")
-                    reglas_fallidas = [regla for regla, cumple in reglas.items() if not cumple]
-                    for regla in reglas_fallidas:
-                        st.error(f"• Corregir: {regla.replace('_', ' ')}")
+                    # Guardar resultados
+                    st.session_state.validacion_completa = resultado_validacion
                     
-                    st.info("💡 **Opciones de corrección:**")
-                    st.info("• Implementar ajuste automático de distribución")
-                    st.info("• Corregir concentración excesiva")
-                    st.info("• Balancear resultados por posición")
+                    st.success("✅ Validación completada")
+                    
+                except Exception as e:
+                    st.error(f"❌ Error en validación: {e}")
+                    st.exception(e)
+        
+        # Mostrar resultados de validación
+        if 'validacion_completa' in st.session_state:
+            st.markdown("---")
+            validacion = st.session_state.validacion_completa
+            
+            # Estado general
+            if validacion['es_valido']:
+                st.success("🎉 **PORTAFOLIO COMPLETAMENTE VÁLIDO**")
+            else:
+                st.error("❌ **PORTAFOLIO INVÁLIDO** - Revisa reglas específicas")
+            
+            # Detalle regla por regla
+            st.subheader("📋 Detalle por Regla")
+            
+            reglas = validacion['detalle_validaciones']
+            descripciones = {
+                "distribucion_global": "Distribución global en rangos históricos (35-41% L, 25-33% E, 30-36% V)",
+                "empates_individuales": "4-6 empates por quiniela individual",
+                "concentracion_maxima": "≤70% concentración general, ≤60% en primeros 3 partidos",
+                "arquitectura_core_satelites": "Arquitectura correcta (actualmente solo Core)",
+                "correlacion_jaccard": "Correlación entre pares ≤ 0.57 (no aplica para solo Core)",
+                "distribucion_divisores": "Distribución equilibrada de resultados"
+            }
+            
+            for regla, cumple in reglas.items():
+                col1, col2 = st.columns([1, 4])
+                
+                with col1:
+                    if cumple:
+                        st.success("✅ CUMPLE")
+                    else:
+                        st.error("❌ FALLA")
+                
+                with col2:
+                    st.write(f"**{regla.replace('_', ' ').title()}**")
+                    st.caption(descripciones.get(regla, "Sin descripción"))
+                    
+                    # Mostrar detalles específicos para reglas que fallan
+                    if not cumple:
+                        if regla == "distribucion_global":
+                            self._mostrar_detalle_distribucion_global(validacion)
+                        elif regla == "empates_individuales":
+                            self._mostrar_detalle_empates_individuales()
+                        elif regla == "concentracion_maxima":
+                            self._mostrar_detalle_concentracion()
+                        elif regla == "distribucion_divisores":
+                            self._mostrar_detalle_distribucion_divisores()
+            
+            # NUEVA SECCIÓN: Debug detallado con sugerencias de corrección
+            st.markdown("---")
+            st.subheader("🔧 Debug Detallado y Sugerencias de Corrección")
+            
+            quinielas = st.session_state.quinielas_generadas
+            self._mostrar_debug_completo_quinielas(quinielas, validacion)
+            
+            # Resumen con próximos pasos
+            st.markdown("---")
+            st.subheader("🎯 Próximos Pasos")
+            
+            if validacion['es_valido']:
+                st.success("🎉 **¡Felicitaciones!** Tu portafolio Core es completamente válido.")
+                st.info("💡 **Siguientes opciones:**")
+                st.info("• Agregar satélites para completar las 30 quinielas")
+                st.info("• Optimizar con GRASP-Annealing")
+                st.info("• Exportar las quinielas Core actuales")
+            else:
+                st.error("🔧 **Se requieren correcciones:**")
+                reglas_fallidas = [regla for regla, cumple in reglas.items() if not cumple]
+                for regla in reglas_fallidas:
+                    st.error(f"• Corregir: {regla.replace('_', ' ')}")
+                
+                st.info("💡 **Opciones de corrección:**")
+                st.info("• Implementar ajuste automático de distribución")
+                st.info("• Corregir concentración excesiva")
+                st.info("• Balancear resultados por posición")
 
     def _mostrar_debug_completo_quinielas(self, quinielas: List[Dict[str, Any]], validacion: Dict[str, Any]):
         """NUEVA FUNCIÓN: Muestra debug completo de cada quiniela"""
