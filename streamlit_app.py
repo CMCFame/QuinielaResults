@@ -265,6 +265,18 @@ class StepByStepProgolApp:
             help="Sin calibración usa probabilidades originales, con calibración las ajusta"
         )
         
+        # NUEVA OPCIÓN: Ajustar umbrales temporalmente
+        st.markdown("---")
+        st.subheader("⚙️ Ajustes Temporales para Debug")
+        
+        usar_umbrales_debug = st.checkbox(
+            "🔧 Usar umbrales más permisivos para debug",
+            help="Reduce umbral de Ancla de 60% a 40% temporalmente"
+        )
+        
+        if usar_umbrales_debug:
+            st.warning("⚠️ Modo Debug: Umbral Ancla = 40% (en lugar de 60%)")
+        
         # Botón para ejecutar clasificación
         if st.button("▶️ Ejecutar Clasificación", type="primary"):
             with st.spinner("Clasificando partidos..."):
@@ -283,6 +295,15 @@ class StepByStepProgolApp:
                     
                     # Clasificar cada partido
                     st.info("🔄 Clasificando partidos...")
+                    
+                    # Ajustar umbrales temporalmente si está en modo debug
+                    if usar_umbrales_debug:
+                        # Guardar umbrales originales
+                        umbrales_originales = self.classifier.umbrales.copy()
+                        # Usar umbrales más permisivos
+                        self.classifier.umbrales["ancla_prob_min"] = 0.40  # 40% en lugar de 60%
+                        st.info("🔧 Usando umbrales debug: Ancla = 40%")
+                    
                     partidos_clasificados = []
                     
                     for i, partido in enumerate(partidos_calibrados):
@@ -294,10 +315,16 @@ class StepByStepProgolApp:
                         }
                         partidos_clasificados.append(partido_final)
                     
+                    # Restaurar umbrales originales si fueron modificados
+                    if usar_umbrales_debug:
+                        self.classifier.umbrales = umbrales_originales
+                        st.info("🔄 Umbrales restaurados")
+                    
                     # Guardar resultados
                     st.session_state.partidos_clasificados = partidos_clasificados
                     st.session_state.estadisticas_clasificacion = self.classifier.obtener_estadisticas_clasificacion(partidos_clasificados)
                     st.session_state.modo_usado = modo_clasificacion
+                    st.session_state.umbrales_debug_usados = usar_umbrales_debug
                     
                     st.success("✅ Clasificación completada")
                     
@@ -312,10 +339,17 @@ class StepByStepProgolApp:
             
             # Mostrar modo usado
             modo_usado = st.session_state.get('modo_usado', 'Desconocido')
+            umbrales_debug = st.session_state.get('umbrales_debug_usados', False)
+            
             if modo_usado == "Sin Calibración (Datos Originales)":
                 st.info("📊 **Modo usado**: Probabilidades originales (sin calibración)")
             else:
                 st.info("📊 **Modo usado**: Con calibración bayesiana aplicada")
+            
+            if umbrales_debug:
+                st.warning("🔧 **Umbrales Debug**: Ancla = 40% (en lugar de 60%)")
+            else:
+                st.info("⚙️ **Umbrales Normales**: Ancla = 60%")
             
             partidos = st.session_state.partidos_clasificados
             stats = st.session_state.estadisticas_clasificacion
@@ -364,13 +398,19 @@ class StepByStepProgolApp:
             
             # Verificar si hay suficientes anclas
             num_anclas = distribución.get("Ancla", 0)
+            umbrales_debug = st.session_state.get('umbrales_debug_usados', False)
+            umbral_texto = "40%" if umbrales_debug else "60%"
+            
             if num_anclas == 0:
-                st.error("❌ **PROBLEMA CRÍTICO**: No hay partidos Ancla. Las quinielas Core no se podrán generar correctamente.")
-                st.warning("💡 Necesitas al menos 2-3 partidos Ancla para un portafolio estable")
+                st.error(f"❌ **PROBLEMA CRÍTICO**: No hay partidos Ancla (>{umbral_texto}). Las quinielas Core no se podrán generar correctamente.")
+                if not umbrales_debug:
+                    st.info("💡 **Solución**: Activa 'umbrales más permisivos para debug' arriba")
+                else:
+                    st.warning("💡 Los datos de ejemplo necesitan probabilidades más extremas")
             elif num_anclas < 2:
-                st.warning(f"⚠️ Solo {num_anclas} Ancla detectada. Se recomienda al menos 2-3 para estabilidad")
+                st.warning(f"⚠️ Solo {num_anclas} Ancla detectada (>{umbral_texto}). Se recomienda al menos 2-3 para estabilidad")
             else:
-                st.success(f"✅ {num_anclas} Anclas detectadas - Suficiente para generar Core estables")
+                st.success(f"✅ {num_anclas} Anclas detectadas (>{umbral_texto}) - Suficiente para generar Core estables")
             
             # Botón para continuar al paso 3
             if num_anclas > 0:
