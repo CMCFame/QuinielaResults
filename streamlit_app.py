@@ -630,176 +630,176 @@ class StepByStepProgolApp:
                     st.info("• Implementar ajuste automático de distribución")
                     st.info("• Corregir concentración excesiva")
                     st.info("• Balancear resultados por posición")
+
+    def _mostrar_debug_completo_quinielas(self, quinielas: List[Dict[str, Any]], validacion: Dict[str, Any]):
+        """NUEVA FUNCIÓN: Muestra debug completo de cada quiniela"""
         
-        def _mostrar_debug_completo_quinielas(self, quinielas: List[Dict[str, Any]], validacion: Dict[str, Any]):
-            """NUEVA FUNCIÓN: Muestra debug completo de cada quiniela"""
-            
-            st.subheader("🔍 Análisis Detallado por Quiniela")
-            
-            # Crear DataFrame con información completa
-            debug_data = []
-            problemas_por_quiniela = {}
-            
-            for q in quinielas:
-                resultados = q["resultados"]
-                distribucion = q["distribución"]
-                
-                # Calcular concentraciones
-                max_conc_general = max(distribucion.values()) / 14
-                primeros_3 = resultados[:3]
-                max_conc_inicial = max(primeros_3.count(s) for s in ["L", "E", "V"]) / 3
-                
-                # Identificar problemas
-                problemas = []
-                if q["empates"] < 4 or q["empates"] > 6:
-                    problemas.append(f"Empates: {q['empates']}")
-                if max_conc_general > 0.70:
-                    signo_problema = max(distribucion, key=distribucion.get)
-                    problemas.append(f"Conc.Gral: {signo_problema}={max_conc_general:.1%}")
-                if max_conc_inicial > 0.60:
-                    signo_problema_inicial = max(["L", "E", "V"], key=lambda s: primeros_3.count(s))
-                    problemas.append(f"Conc.Inicial: {signo_problema_inicial}={max_conc_inicial:.1%}")
-                
-                debug_data.append({
-                    "ID": q["id"],
-                    "Quiniela": "".join(resultados),
-                    "L": distribucion["L"],
-                    "E": distribucion["E"],
-                    "V": distribucion["V"],
-                    "Conc.General": f"{max_conc_general:.1%}",
-                    "Conc.Inicial": f"{max_conc_inicial:.1%}",
-                    "Problemas": "; ".join(problemas) if problemas else "✅ OK"
-                })
-                
-                if problemas:
-                    problemas_por_quiniela[q["id"]] = problemas
-            
-            # Mostrar tabla
-            debug_df = pd.DataFrame(debug_data)
-            
-            # Colorear filas problemáticas
-            def color_problemas(row):
-                if "✅ OK" not in row["Problemas"]:
-                    return ['background-color: #ffcccc'] * len(row)
-                return [''] * len(row)
-            
-            styled_debug_df = debug_df.style.apply(color_problemas, axis=1)
-            st.dataframe(styled_debug_df, use_container_width=True, hide_index=True)
-            
-            # Mostrar resumen de problemas
-            if problemas_por_quiniela:
-                st.error(f"❌ **{len(problemas_por_quiniela)} quinielas con problemas:**")
-                
-                for q_id, problemas in problemas_por_quiniela.items():
-                    with st.expander(f"🔧 Problemas en {q_id}"):
-                        for problema in problemas:
-                            st.error(f"• {problema}")
-                        
-                        # Sugerencias específicas
-                        quiniela = next(q for q in quinielas if q["id"] == q_id)
-                        sugerencias = self._generar_sugerencias_correccion(quiniela)
-                        
-                        if sugerencias:
-                            st.info("💡 **Sugerencias de corrección:**")
-                            for sugerencia in sugerencias:
-                                st.info(f"• {sugerencia}")
-            else:
-                st.success("✅ **Todas las quinielas individuales están bien**")
-            
-            # Análisis de distribución global
-            st.subheader("📊 Análisis de Distribución Global")
-            
-            total_L = sum(q["distribución"]["L"] for q in quinielas)
-            total_E = sum(q["distribución"]["E"] for q in quinielas)
-            total_V = sum(q["distribución"]["V"] for q in quinielas)
-            total_partidos = len(quinielas) * 14
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                porc_L = total_L / total_partidos
-                estado_L = "✅" if 0.35 <= porc_L <= 0.41 else "❌"
-                st.metric(f"Locales {estado_L}", f"{porc_L:.1%}", help="Objetivo: 35-41%")
-                
-            with col2:
-                porc_E = total_E / total_partidos
-                estado_E = "✅" if 0.25 <= porc_E <= 0.33 else "❌"
-                st.metric(f"Empates {estado_E}", f"{porc_E:.1%}", help="Objetivo: 25-33%")
-                
-            with col3:
-                porc_V = total_V / total_partidos
-                estado_V = "✅" if 0.30 <= porc_V <= 0.36 else "❌"
-                st.metric(f"Visitantes {estado_V}", f"{porc_V:.1%}", help="Objetivo: 30-36%")
-            
-            # Sugerencias de corrección global
-            if not (0.35 <= porc_L <= 0.41 and 0.25 <= porc_E <= 0.33 and 0.30 <= porc_V <= 0.36):
-                st.warning("⚠️ **Correcciones necesarias para distribución global:**")
-                
-                if porc_L > 0.41:
-                    exceso_L = int((porc_L - 0.41) * total_partidos)
-                    st.warning(f"• Reducir locales: -{exceso_L} resultados L")
-                
-                if porc_V < 0.30:
-                    falta_V = int((0.30 - porc_V) * total_partidos)
-                    st.warning(f"• Aumentar visitantes: +{falta_V} resultados V")
+        st.subheader("🔍 Análisis Detallado por Quiniela")
         
-        def _generar_sugerencias_correccion(self, quiniela: Dict[str, Any]) -> List[str]:
-            """Genera sugerencias específicas para corregir una quiniela"""
-            sugerencias = []
-            resultados = quiniela["resultados"]
-            distribucion = quiniela["distribución"]
+        # Crear DataFrame con información completa
+        debug_data = []
+        problemas_por_quiniela = {}
+        
+        for q in quinielas:
+            resultados = q["resultados"]
+            distribucion = q["distribución"]
             
-            # Sugerencias para empates
-            if quiniela["empates"] < 4:
-                falta = 4 - quiniela["empates"]
-                sugerencias.append(f"Cambiar {falta} resultados L/V a E en partidos con alta prob_empate")
-            elif quiniela["empates"] > 6:
-                exceso = quiniela["empates"] - 6
-                sugerencias.append(f"Cambiar {exceso} empates E a L/V en partidos con baja prob_empate")
-            
-            # Sugerencias para concentración general
+            # Calcular concentraciones
             max_conc_general = max(distribucion.values()) / 14
-            if max_conc_general > 0.70:
-                signo_concentrado = max(distribucion, key=distribucion.get)
-                exceso = distribucion[signo_concentrado] - 9  # Máximo permitido
-                sugerencias.append(f"Reducir {signo_concentrado}: cambiar {exceso} resultados a otros signos")
-            
-            # Sugerencias para concentración inicial
             primeros_3 = resultados[:3]
             max_conc_inicial = max(primeros_3.count(s) for s in ["L", "E", "V"]) / 3
-            if max_conc_inicial > 0.60:
-                signo_inicial = max(["L", "E", "V"], key=lambda s: primeros_3.count(s))
-                sugerencias.append(f"Cambiar al menos 1 resultado {signo_inicial} en primeros 3 partidos")
             
-            return sugerencias
+            # Identificar problemas
+            problemas = []
+            if q["empates"] < 4 or q["empates"] > 6:
+                problemas.append(f"Empates: {q['empates']}")
+            if max_conc_general > 0.70:
+                signo_problema = max(distribucion, key=distribucion.get)
+                problemas.append(f"Conc.Gral: {signo_problema}={max_conc_general:.1%}")
+            if max_conc_inicial > 0.60:
+                signo_problema_inicial = max(["L", "E", "V"], key=lambda s: primeros_3.count(s))
+                problemas.append(f"Conc.Inicial: {signo_problema_inicial}={max_conc_inicial:.1%}")
+            
+            debug_data.append({
+                "ID": q["id"],
+                "Quiniela": "".join(resultados),
+                "L": distribucion["L"],
+                "E": distribucion["E"],
+                "V": distribucion["V"],
+                "Conc.General": f"{max_conc_general:.1%}",
+                "Conc.Inicial": f"{max_conc_inicial:.1%}",
+                "Problemas": "; ".join(problemas) if problemas else "✅ OK"
+            })
+            
+            if problemas:
+                problemas_por_quiniela[q["id"]] = problemas
         
-        def _mostrar_detalle_distribucion_divisores(self):
-            """Mostrar detalles de distribución por posición"""
-            if 'quinielas_generadas' in st.session_state:
-                quinielas = st.session_state.quinielas_generadas
-                
-                st.warning("**Análisis por posición:**")
-                
-                # Analizar distribución por posición
-                posiciones_problema = []
-                for pos in range(14):
-                    conteos = {"L": 0, "E": 0, "V": 0}
-                    for q in quinielas:
-                        resultado = q["resultados"][pos]
-                        conteos[resultado] += 1
+        # Mostrar tabla
+        debug_df = pd.DataFrame(debug_data)
+        
+        # Colorear filas problemáticas
+        def color_problemas(row):
+            if "✅ OK" not in row["Problemas"]:
+                return ['background-color: #ffcccc'] * len(row)
+            return [''] * len(row)
+        
+        styled_debug_df = debug_df.style.apply(color_problemas, axis=1)
+        st.dataframe(styled_debug_df, use_container_width=True, hide_index=True)
+        
+        # Mostrar resumen de problemas
+        if problemas_por_quiniela:
+            st.error(f"❌ **{len(problemas_por_quiniela)} quinielas con problemas:**")
+            
+            for q_id, problemas in problemas_por_quiniela.items():
+                with st.expander(f"🔧 Problemas en {q_id}"):
+                    for problema in problemas:
+                        st.error(f"• {problema}")
                     
-                    max_apariciones = max(conteos.values())
-                    max_porcentaje = max_apariciones / len(quinielas)
+                    # Sugerencias específicas
+                    quiniela = next(q for q in quinielas if q["id"] == q_id)
+                    sugerencias = self._generar_sugerencias_correccion(quiniela)
                     
-                    if max_porcentaje > 0.75:  # >75% mismo resultado en una posición
-                        signo_dominante = max(conteos, key=conteos.get)
-                        posiciones_problema.append(f"P{pos+1}: {signo_dominante} aparece {max_apariciones}/{len(quinielas)} veces ({max_porcentaje:.1%})")
+                    if sugerencias:
+                        st.info("💡 **Sugerencias de corrección:**")
+                        for sugerencia in sugerencias:
+                            st.info(f"• {sugerencia}")
+        else:
+            st.success("✅ **Todas las quinielas individuales están bien**")
+        
+        # Análisis de distribución global
+        st.subheader("📊 Análisis de Distribución Global")
+        
+        total_L = sum(q["distribución"]["L"] for q in quinielas)
+        total_E = sum(q["distribución"]["E"] for q in quinielas)
+        total_V = sum(q["distribución"]["V"] for q in quinielas)
+        total_partidos = len(quinielas) * 14
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            porc_L = total_L / total_partidos
+            estado_L = "✅" if 0.35 <= porc_L <= 0.41 else "❌"
+            st.metric(f"Locales {estado_L}", f"{porc_L:.1%}", help="Objetivo: 35-41%")
+            
+        with col2:
+            porc_E = total_E / total_partidos
+            estado_E = "✅" if 0.25 <= porc_E <= 0.33 else "❌"
+            st.metric(f"Empates {estado_E}", f"{porc_E:.1%}", help="Objetivo: 25-33%")
+            
+        with col3:
+            porc_V = total_V / total_partidos
+            estado_V = "✅" if 0.30 <= porc_V <= 0.36 else "❌"
+            st.metric(f"Visitantes {estado_V}", f"{porc_V:.1%}", help="Objetivo: 30-36%")
+        
+        # Sugerencias de corrección global
+        if not (0.35 <= porc_L <= 0.41 and 0.25 <= porc_E <= 0.33 and 0.30 <= porc_V <= 0.36):
+            st.warning("⚠️ **Correcciones necesarias para distribución global:**")
+            
+            if porc_L > 0.41:
+                exceso_L = int((porc_L - 0.41) * total_partidos)
+                st.warning(f"• Reducir locales: -{exceso_L} resultados L")
+            
+            if porc_V < 0.30:
+                falta_V = int((0.30 - porc_V) * total_partidos)
+                st.warning(f"• Aumentar visitantes: +{falta_V} resultados V")
+    
+    def _generar_sugerencias_correccion(self, quiniela: Dict[str, Any]) -> List[str]:
+        """Genera sugerencias específicas para corregir una quiniela"""
+        sugerencias = []
+        resultados = quiniela["resultados"]
+        distribucion = quiniela["distribución"]
+        
+        # Sugerencias para empates
+        if quiniela["empates"] < 4:
+            falta = 4 - quiniela["empates"]
+            sugerencias.append(f"Cambiar {falta} resultados L/V a E en partidos con alta prob_empate")
+        elif quiniela["empates"] > 6:
+            exceso = quiniela["empates"] - 6
+            sugerencias.append(f"Cambiar {exceso} empates E a L/V en partidos con baja prob_empate")
+        
+        # Sugerencias para concentración general
+        max_conc_general = max(distribucion.values()) / 14
+        if max_conc_general > 0.70:
+            signo_concentrado = max(distribucion, key=distribucion.get)
+            exceso = distribucion[signo_concentrado] - 9  # Máximo permitido
+            sugerencias.append(f"Reducir {signo_concentrado}: cambiar {exceso} resultados a otros signos")
+        
+        # Sugerencias para concentración inicial
+        primeros_3 = resultados[:3]
+        max_conc_inicial = max(primeros_3.count(s) for s in ["L", "E", "V"]) / 3
+        if max_conc_inicial > 0.60:
+            signo_inicial = max(["L", "E", "V"], key=lambda s: primeros_3.count(s))
+            sugerencias.append(f"Cambiar al menos 1 resultado {signo_inicial} en primeros 3 partidos")
+        
+        return sugerencias
+    
+    def _mostrar_detalle_distribucion_divisores(self):
+        """Mostrar detalles de distribución por posición"""
+        if 'quinielas_generadas' in st.session_state:
+            quinielas = st.session_state.quinielas_generadas
+            
+            st.warning("**Análisis por posición:**")
+            
+            # Analizar distribución por posición
+            posiciones_problema = []
+            for pos in range(14):
+                conteos = {"L": 0, "E": 0, "V": 0}
+                for q in quinielas:
+                    resultado = q["resultados"][pos]
+                    conteos[resultado] += 1
                 
-                if posiciones_problema:
-                    for problema in posiciones_problema:
-                        st.warning(f"• {problema}")
-                else:
-                    st.info("Distribución por posición parece equilibrada")
+                max_apariciones = max(conteos.values())
+                max_porcentaje = max_apariciones / len(quinielas)
+                
+                if max_porcentaje > 0.75:  # >75% mismo resultado en una posición
+                    signo_dominante = max(conteos, key=conteos.get)
+                    posiciones_problema.append(f"P{pos+1}: {signo_dominante} aparece {max_apariciones}/{len(quinielas)} veces ({max_porcentaje:.1%})")
+            
+            if posiciones_problema:
+                for problema in posiciones_problema:
+                    st.warning(f"• {problema}")
+            else:
+                st.info("Distribución por posición parece equilibrada")
     
     def _mostrar_detalle_distribucion_global(self, validacion):
         """Mostrar detalles específicos de distribución global"""
