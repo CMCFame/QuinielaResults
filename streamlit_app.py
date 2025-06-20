@@ -1,15 +1,12 @@
 # streamlit_app.py
 """
-Interfaz gráfica Streamlit para Progol Optimizer - VERSIÓN CORREGIDA CON DEBUG AI
-Permite cargar datos, ejecutar optimización y ver resultados
-NUEVA FUNCIONALIDAD: Ventana de debug para ver comunicación con la IA
+Progol Optimizer - Flujo Paso a Paso Simplificado
+Interfaz que permite debuggear cada componente por separado
 """
 
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
 import json
 import sys
 import os
@@ -18,1268 +15,635 @@ import logging
 import tempfile
 import numpy as np
 
-# REPARACIÓN DE IMPORTS - Ajustado para estructura de archivos actual
+# Mantener todos los imports existentes
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
-# Importar directamente desde la raíz
 try:
     from main import ProgolOptimizer
+    from data.loader import DataLoader
+    from data.validator import DataValidator
+    from models.classifier import PartidoClassifier
+    from models.calibrator import BayesianCalibrator
+    from portfolio.core_generator import CoreGenerator
+    from validation.portfolio_validator import PortfolioValidator
     from config.constants import PROGOL_CONFIG
 except ImportError as e:
     st.error(f"Error importando módulos: {e}")
-    st.info("Verificar que existan los archivos main.py y config/constants.py")
     st.stop()
 
-class ProgolStreamlitApp:
+class StepByStepProgolApp:
     """
-    Aplicación Streamlit para el Progol Optimizer - VERSIÓN CORREGIDA CON DEBUG AI
+    Aplicación simplificada que expone cada paso del proceso por separado
     """
-
+    
     def __init__(self):
         self.configurar_pagina()
-        self.configurar_logging()
-
+        self.inicializar_componentes()
+    
     def configurar_pagina(self):
-        """Configuración inicial de la página Streamlit"""
         st.set_page_config(
-            page_title="Progol Optimizer",
+            page_title="Progol Optimizer - Debug Paso a Paso",
             page_icon="⚽",
             layout="wide",
             initial_sidebar_state="expanded"
         )
-
-    def configurar_logging(self):
-        """Configurar logging para Streamlit"""
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-
+    
+    def inicializar_componentes(self):
+        """Inicializar solo los componentes necesarios"""
+        self.data_loader = DataLoader()
+        self.data_validator = DataValidator()
+        self.classifier = PartidoClassifier()
+        self.calibrator = BayesianCalibrator()
+        self.core_generator = CoreGenerator()
+        self.validator = PortfolioValidator()
+    
     def run(self):
         """Ejecutar la aplicación principal"""
-        # Título principal
-        st.title("⚽ Progol Optimizer")
-        st.markdown("### Metodología Definitiva - Implementación Exacta")
-        st.markdown("---")
-
-        # Sidebar con configuración
-        self.crear_sidebar()
-
-        # Verificar si debemos ejecutar optimización con AI automáticamente
-        if hasattr(st.session_state, 'ejecutar_con_ai') and st.session_state.ejecutar_con_ai:
-            st.session_state.ejecutar_con_ai = False
-            # Ir directamente a optimización
-            tab_index = 1
-        else:
-            tab_index = 0
-
-        # Contenido principal
+        st.title("⚽ Progol Optimizer - Debug Paso a Paso")
+        st.markdown("### Flujo simplificado para identificar problemas")
+        
+        # Sidebar con estado del flujo
+        self.mostrar_sidebar_estado()
+        
+        # Tabs principales - 4 pasos
         tabs = st.tabs([
-            "📊 Datos & Configuración",
-            "🎯 Optimización",
-            "📈 Resultados",
-            "📋 Validación"
+            "📊 PASO 1: Datos",
+            "🏷️ PASO 2: Clasificación", 
+            "🎯 PASO 3: Generación",
+            "✅ PASO 4: Validación"
         ])
-
+        
         with tabs[0]:
-            self.tab_datos_configuracion()
-
+            self.paso_1_datos()
+        
         with tabs[1]:
-            self.tab_optimizacion()
-            # Si venimos de validación, ejecutar automáticamente
-            if hasattr(st.session_state, 'ejecutar_con_ai') and st.session_state.ejecutar_con_ai:
-                self.ejecutar_optimizacion(forzar_ai=True)
-
+            self.paso_2_clasificacion()
+            
         with tabs[2]:
-            self.tab_resultados()
-
+            self.paso_3_generacion()
+            
         with tabs[3]:
-            self.tab_validacion()
-
-    def crear_sidebar(self):
-        """Crear sidebar con información y controles"""
+            self.paso_4_validacion()
+    
+    def mostrar_sidebar_estado(self):
+        """Mostrar estado actual del flujo en sidebar"""
         with st.sidebar:
-            st.header("🔧 Configuración")
-
-            # Información del documento
-            st.info("""
-            **Basado en el documento técnico:**
-            - 38% Locales, 29% Empates, 33% Visitantes
-            - 4-6 empates por quiniela
-            - Arquitectura 4 Core + 26 Satélites
-            - Optimización GRASP-Annealing
-            """)
-
-            # Parámetros configurables
-            st.subheader("Parámetros de Optimización")
-
-            st.session_state.concurso_id = st.text_input(
-                "ID del Concurso",
-                value=st.session_state.get('concurso_id', '2283'),
-                help="Identificador del concurso a procesar"
-            )
-
-            st.session_state.debug_mode = st.checkbox(
-                "Modo Debug",
-                value=st.session_state.get('debug_mode', False),
-                help="Mostrar información detallada de debug"
-            )
-
-            # NUEVA SECCIÓN AI
+            st.header("🔍 Estado del Flujo")
+            
+            # Estado de cada paso
+            paso1_ok = 'datos_validados' in st.session_state and st.session_state.datos_validados
+            paso2_ok = 'partidos_clasificados' in st.session_state
+            paso3_ok = 'quinielas_generadas' in st.session_state
+            paso4_ok = 'validacion_completa' in st.session_state
+            
+            st.write("📊 Paso 1 - Datos:", "✅" if paso1_ok else "⏳")
+            st.write("🏷️ Paso 2 - Clasificación:", "✅" if paso2_ok else "⏳")
+            st.write("🎯 Paso 3 - Generación:", "✅" if paso3_ok else "⏳")
+            st.write("✅ Paso 4 - Validación:", "✅" if paso4_ok else "⏳")
+            
             st.markdown("---")
-            st.subheader("🤖 Configuración AI")
-
-            # Verificar si hay API key en secrets
-            if "OPENAI_API_KEY" in st.secrets:
-                # API key está en secrets
-                os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
-                st.success("✅ AI habilitada (API key desde secrets)")
-                st.caption("La clave API está configurada de forma segura")
-                
-                # Opción para usar una clave diferente temporalmente
-                with st.expander("Usar API key diferente (opcional)"):
-                    temp_key = st.text_input(
-                        "API Key temporal",
-                        type="password",
-                        help="Solo si quieres usar una clave diferente para esta sesión"
-                    )
-                    if temp_key:
-                        os.environ["OPENAI_API_KEY"] = temp_key
-                        st.session_state.openai_api_key = temp_key
-                        st.info("Usando API key temporal para esta sesión")
-            else:
-                # No hay API key en secrets, permitir ingreso manual
-                st.warning("⚠️ No se encontró API key en configuración")
-                
-                api_key = st.text_input(
-                    "OpenAI API Key",
-                    type="password",
-                    help="Ingresa tu API key de OpenAI para habilitar corrección inteligente",
-                    key="openai_api_key"
-                )
-                
-                if api_key:
-                    os.environ["OPENAI_API_KEY"] = api_key
-                    st.success("✅ API Key configurada para esta sesión")
-                else:
-                    st.info("ℹ️ AI deshabilitada - Configura la API key en secrets o ingrésala arriba")
-                    
-                # Instrucciones para configurar en secrets
-                with st.expander("📖 Cómo configurar API key permanentemente"):
-                    st.markdown("""
-                    **Para Streamlit Cloud:**
-                    1. Ve a tu app en [share.streamlit.io](https://share.streamlit.io)
-                    2. Click en ⚙️ Settings → Secrets
-                    3. Agrega:
-                    ```toml
-                    OPENAI_API_KEY = "sk-tu-api-key-aqui"
-                    ```
-                    4. Click en "Save" y la app se reiniciará
-                    
-                    **Para desarrollo local:**
-                    1. Crea `.streamlit/secrets.toml` en la raíz del proyecto
-                    2. Agrega la misma línea de arriba
-                    3. Asegúrate de que `.streamlit/secrets.toml` esté en `.gitignore`
-                    """)
-
-            # Mostrar configuración actual
-            if st.expander("Ver Configuración Actual"):
-                st.json(PROGOL_CONFIG)
-                
-    def tab_datos_configuracion(self):
-        """Tab para carga y configuración de datos - CORREGIDO"""
-        st.header("📊 Datos y Configuración")
-
+            
+            # Botón de reset
+            if st.button("🔄 Reiniciar Todo", type="secondary"):
+                for key in list(st.session_state.keys()):
+                    if key.startswith(('datos_', 'partidos_', 'quinielas_', 'validacion_')):
+                        del st.session_state[key]
+                st.rerun()
+            
+            # Mostrar configuración
+            with st.expander("⚙️ Ver Configuración"):
+                st.json({
+                    "EMPATES_MIN": PROGOL_CONFIG["EMPATES_MIN"],
+                    "EMPATES_MAX": PROGOL_CONFIG["EMPATES_MAX"],
+                    "CONCENTRACION_MAX": PROGOL_CONFIG["CONCENTRACION_MAX_GENERAL"],
+                    "RANGOS_L": PROGOL_CONFIG["RANGOS_HISTORICOS"]["L"],
+                    "RANGOS_E": PROGOL_CONFIG["RANGOS_HISTORICOS"]["E"],
+                    "RANGOS_V": PROGOL_CONFIG["RANGOS_HISTORICOS"]["V"]
+                })
+    
+    def paso_1_datos(self):
+        """PASO 1: Carga y validación de datos solamente"""
+        st.header("📊 PASO 1: Carga y Validación de Datos")
+        st.markdown("**Objetivo**: Asegurar que tenemos exactamente 14 partidos con probabilidades válidas")
+        
         col1, col2 = st.columns([1, 1])
-
+        
         with col1:
-            st.subheader("Carga de Datos")
-
-            # Opción 1: Usar datos de ejemplo
-            if st.button("🎲 Usar Datos de Ejemplo", type="secondary"):
-                with st.spinner("Generando datos de ejemplo con Anclas garantizadas..."):
+            st.subheader("Cargar Datos")
+            
+            # Opción 1: Datos de ejemplo
+            if st.button("🎲 Generar Datos de Ejemplo", type="primary"):
+                with st.spinner("Generando datos de ejemplo..."):
                     try:
-                        from data.loader import DataLoader
-                        loader = DataLoader()
-                        datos_ejemplo = loader._generar_datos_ejemplo()
-                        st.session_state.datos_partidos = datos_ejemplo
-                        st.session_state.archivo_origen = "datos_ejemplo_corregidos"
-                        st.success(f"✅ Generados {len(datos_ejemplo)} partidos de ejemplo con Anclas garantizadas")
-
+                        datos = self.data_loader._generar_datos_ejemplo()
+                        st.session_state.datos_raw = datos
+                        st.session_state.origen_datos = "Datos de Ejemplo"
+                        st.success(f"✅ Generados {len(datos)} partidos")
                     except Exception as e:
-                        st.error(f"Error generando datos: {e}")
-
-            # Opción 2: Subir archivo CSV - CORREGIDO
-            st.markdown("**O subir archivo CSV:**")
+                        st.error(f"❌ Error: {e}")
+            
+            # Opción 2: Subir CSV
+            st.markdown("**O subir CSV:**")
             archivo_csv = st.file_uploader(
-                "Seleccionar archivo CSV",
+                "Archivo CSV",
                 type=['csv'],
-                help="CSV con columnas: home, away, liga, prob_local, prob_empate, prob_visitante"
+                help="Debe tener: home, away, prob_local, prob_empate, prob_visitante"
             )
-
-            if archivo_csv is not None:
+            
+            if archivo_csv:
                 try:
-                    # CORRECCIÓN: Leer CSV del usuario correctamente
                     df = pd.read_csv(archivo_csv)
-                    
-                    # Verificar que tenga exactamente 14 filas
                     if len(df) != 14:
-                        st.error(f"❌ El archivo debe tener exactamente 14 partidos, tiene {len(df)}")
-                        return
-                    
-                    st.success(f"✅ Archivo cargado: {len(df)} partidos")
-
-                    # CORRECCIÓN: Convertir DataFrame a formato interno correctamente
-                    datos_partidos = []
-                    for idx, row in df.iterrows():
-                        # Verificar columnas requeridas
-                        if 'home' not in row or 'away' not in row:
-                            st.error("❌ El CSV debe tener columnas 'home' y 'away'")
-                            return
-                            
-                        # Probabilidades: usar las del CSV o generar si no existen
-                        if all(col in row for col in ['prob_local', 'prob_empate', 'prob_visitante']):
-                            prob_local = float(row['prob_local'])
-                            prob_empate = float(row['prob_empate'])
-                            prob_visitante = float(row['prob_visitante'])
-                            
-                            # Verificar que sumen ~1.0
-                            total = prob_local + prob_empate + prob_visitante
-                            if abs(total - 1.0) > 0.05:
-                                st.warning(f"⚠️ Partido {idx+1}: probabilidades suman {total:.3f}, normalizando...")
-                                prob_local /= total
-                                prob_empate /= total 
-                                prob_visitante /= total
-                        else:
-                            # Generar probabilidades realistas si no están en CSV
-                            from data.loader import DataLoader
-                            loader = DataLoader()
-                            prob_local, prob_empate, prob_visitante = loader._generar_probabilidades_balanceadas_por_partido(idx)
-
-                        partido = {
-                            'id': idx,
-                            'home': str(row['home']).strip(),
-                            'away': str(row['away']).strip(),
-                            'liga': str(row.get('liga', 'Liga')).strip(),
-                            'prob_local': prob_local,
-                            'prob_empate': prob_empate,
-                            'prob_visitante': prob_visitante,
-                            'forma_diferencia': float(row.get('forma_diferencia', 0)),
-                            'lesiones_impact': float(row.get('lesiones_impact', 0)),
-                            'es_final': bool(row.get('es_final', False)),
-                            'es_derbi': bool(row.get('es_derbi', False)),
-                            'es_playoff': bool(row.get('es_playoff', False)),
-                            'fecha': str(row.get('fecha', '2025-06-07')),
-                            'jornada': int(row.get('jornada', 1)),
-                            'concurso_id': str(row.get('concurso_id', st.session_state.concurso_id))
-                        }
-                        datos_partidos.append(partido)
-
-                    # CORRECCIÓN: Asegurar que se guarden los datos del usuario
-                    st.session_state.datos_partidos = datos_partidos
-                    st.session_state.archivo_origen = archivo_csv.name
-                    
-                    st.success(f"✅ **Datos de {archivo_csv.name} cargados correctamente**")
-
+                        st.error(f"❌ Se requieren 14 partidos, archivo tiene {len(df)}")
+                    else:
+                        # Convertir a formato interno
+                        datos = self._convertir_csv_a_datos(df)
+                        st.session_state.datos_raw = datos
+                        st.session_state.origen_datos = archivo_csv.name
+                        st.success(f"✅ Cargado: {archivo_csv.name}")
                 except Exception as e:
-                    st.error(f"Error procesando CSV: {e}")
-                    if st.session_state.debug_mode:
-                        st.exception(e)
-
+                    st.error(f"❌ Error leyendo CSV: {e}")
+        
         with col2:
-            st.subheader("Vista Previa de Datos")
-
-            if 'datos_partidos' in st.session_state:
-                datos = st.session_state.datos_partidos
-                archivo_origen = st.session_state.get('archivo_origen', 'datos_ejemplo')
-
-                # MEJORA: Mostrar origen de datos claramente
-                if archivo_origen == 'datos_ejemplo_corregidos':
-                    st.info("📊 **Usando datos de ejemplo CORREGIDOS con Anclas garantizadas**")
-                elif archivo_origen == 'datos_ejemplo':
-                    st.info("📊 **Usando datos de ejemplo generados**")
-                else:
-                    st.success(f"📄 **Usando datos de: {archivo_origen}**")
-
-                # Crear DataFrame para mostrar - CON NOMBRES DE EQUIPOS
-                df_preview = pd.DataFrame([
+            if 'datos_raw' in st.session_state:
+                st.subheader("Vista Previa")
+                datos = st.session_state.datos_raw
+                
+                # Mostrar origen
+                st.info(f"📄 Origen: {st.session_state.get('origen_datos', 'Desconocido')}")
+                
+                # Tabla de vista previa
+                preview_df = pd.DataFrame([
                     {
-                        '#': i+1,
-                        'Partido': f"{p['home']} vs {p['away']}",
-                        'Liga': p['liga'],
-                        'P(L)': f"{p['prob_local']:.3f}",
-                        'P(E)': f"{p['prob_empate']:.3f}",
-                        'P(V)': f"{p['prob_visitante']:.3f}",
-                        'Final': '🏆' if p.get('es_final') else '',
-                        'Derbi': '🔥' if p.get('es_derbi') else ''
+                        "#": i+1,
+                        "Local": p['home'][:15],
+                        "Visitante": p['away'][:15],
+                        "P(L)": f"{p['prob_local']:.3f}",
+                        "P(E)": f"{p['prob_empate']:.3f}",
+                        "P(V)": f"{p['prob_visitante']:.3f}",
+                        "Suma": f"{p['prob_local'] + p['prob_empate'] + p['prob_visitante']:.3f}"
                     }
                     for i, p in enumerate(datos)
                 ])
-
-                st.dataframe(df_preview, use_container_width=True)
-
-                # Estadísticas rápidas
-                st.markdown("**Estadísticas:**")
-                col_a, col_b, col_c = st.columns(3)
-
-                with col_a:
-                    st.metric("Total Partidos", len(datos))
-
-                with col_b:
-                    ligas = len(set(p['liga'] for p in datos))
-                    st.metric("Ligas", ligas)
-
-                with col_c:
-                    # Verificar potenciales Anclas
-                    anclas_potenciales = sum(1 for p in datos if max(p['prob_local'], p['prob_empate'], p['prob_visitante']) > 0.60)
-                    st.metric("Anclas Potenciales", anclas_potenciales)
-
-            else:
-                st.info("👆 Carga datos usando una de las opciones de arriba")
-
-    def tab_optimizacion(self):
-        """Tab para ejecutar la optimización con selector de método."""
-        st.header("🎯 Optimización del Portafolio")
-
-        if 'datos_partidos' not in st.session_state:
-            st.warning("⚠️ Primero carga los datos en la pestaña 'Datos & Configuración'")
-            return
-
-        st.info(f"📄 Se optimizará usando datos de: {st.session_state.get('archivo_origen', 'ejemplo')}")
-
-        # --- NUEVO: SELECTOR DE MÉTODO ---
-        st.subheader("1. Selecciona el Método de Optimización")
-        metodo_seleccionado = st.radio(
-            "Elige el motor para generar el portafolio:",
-            options=["Híbrido (Recomendado)", "Heurístico (Heredado)"],
-            captions=[
-                "Usa Programación Entera + Annealing para garantizar un portafolio válido y óptimo.",
-                "Usa el algoritmo original, más rápido pero puede no encontrar soluciones válidas."
-            ],
-            horizontal=True,
-            key="metodo_optimizacion"
-        )
-        st.session_state.metodo_optimizacion_key = "hybrid" if "Híbrido" in metodo_seleccionado else "legacy"
-        st.markdown("---")
+                
+                st.dataframe(preview_df, use_container_width=True, hide_index=True)
         
-        st.subheader("2. Ejecuta la Optimización")
-        ai_disponible = "OPENAI_API_KEY" in os.environ or "OPENAI_API_KEY" in st.secrets
-
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🚀 Ejecutar Optimización", type="primary", use_container_width=True):
-                self.ejecutar_optimizacion(forzar_ai=False)
-        with col2:
-            if ai_disponible:
-                if st.button("🤖 Optimizar con AI (Forzado)", type="secondary", use_container_width=True,
-                            help="Fuerza el uso de AI incluso si el resultado inicial es válido"):
-                    self.ejecutar_optimizacion(forzar_ai=True)
-            else:
-                st.button("🤖 Optimizar con AI", disabled=True, use_container_width=True)
-
-        if 'optimizacion_ejecutando' in st.session_state and st.session_state.optimizacion_ejecutando:
-            self.mostrar_progreso_optimizacion()
-
-    def ejecutar_optimizacion(self, forzar_ai=False):
-        """Ejecutar el proceso completo de optimización"""
-        st.session_state.optimizacion_ejecutando = True
-        st.session_state.forzar_ai = forzar_ai
-
-        progress_bar = st.progress(0, text="Inicializando...")
-
-        try:
-            progress_bar.progress(10, text="🔧 Inicializando optimizador...")
-            optimizer = ProgolOptimizer()
-
-            def update_progress(progress_value, text_value):
-                display_progress = 30 + int(progress_value * 60)
-                progress_bar.progress(display_progress, text=text_value)
-
-            progress_bar.progress(30, text=f"⚙️ Ejecutando optimización con método {st.session_state.metodo_optimizacion_key.upper()}...")
+        # Validación de datos
+        if 'datos_raw' in st.session_state:
+            st.markdown("---")
+            st.subheader("🔍 Validación de Datos")
             
-            if forzar_ai and optimizer.ai_assistant.enabled:
-                progress_bar.progress(35, text="🤖 Optimización con asistencia AI activada...")
-
-            # Llamamos a la función que contiene la lógica principal
-            self.ejecutar_optimizacion_directo(optimizer, progress_callback=update_progress, forzar_ai=forzar_ai)
-            
-            progress_bar.progress(100, text="✅ Optimización completada!")
-
-        except Exception as e:
-            st.error(f"❌ Error en optimización: {e}")
-            if st.session_state.debug_mode:
-                st.exception(e)
-        finally:
-            st.session_state.optimizacion_ejecutando = False
-
-    def ejecutar_optimizacion_directo(self, optimizer, progress_callback=None, forzar_ai=False):
-        """Ejecutar optimización usando datos y método seleccionados."""
-        
-        if "OPENAI_API_KEY" in st.secrets:
-            os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
-        elif hasattr(st.session_state, 'openai_api_key') and st.session_state.openai_api_key:
-            os.environ["OPENAI_API_KEY"] = st.session_state.openai_api_key
-        
-        datos_partidos = st.session_state.datos_partidos
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as tmp:
-            df = pd.DataFrame(datos_partidos)
-            df.to_csv(tmp.name, index=False)
-            temp_path = tmp.name
-        
-        try:
-            resultado = optimizer.procesar_concurso(
-                archivo_datos=temp_path,
-                concurso_id=st.session_state.concurso_id,
-                forzar_ai=forzar_ai,
-                method=st.session_state.metodo_optimizacion_key
-            )
-            
-            st.session_state.resultado_optimizacion = resultado
-            
-            if resultado and resultado.get("success"):
-                self.mostrar_resumen_resultado(resultado)
-            else:
-                 st.error(f"La optimización falló: {resultado.get('error', 'Error desconocido')}")
-
-        finally:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-
-    def mostrar_resumen_resultado(self, resultado):
-        """Mostrar resumen inmediato del resultado"""
-        
-        if not resultado or not resultado.get("success"):
-            st.error("❌ Error durante la optimización.")
-            return
-
-        st.success("🎉 ¡Optimización completada exitosamente!")
-
-        if resultado.get("ai_utilizada"):
-            st.info("🤖 **AI fue utilizada** para corregir problemas de validación")
-
-        col1, col2, col3, col4, col5 = st.columns(5)
-
-        with col1:
-            st.metric("Quinielas Generadas", len(resultado.get("portafolio", [])))
-
-        with col2:
-            es_valido = resultado.get("validacion", {}).get("es_valido", False)
-            if es_valido:
-                st.metric("Validación", "✅ VÁLIDO", delta="Cumple todas las reglas")
-            else:
-                st.metric("Validación", "❌ INVÁLIDO", delta="Revisa la pestaña Validación")
-
-        with col3:
-            cores = len([q for q in resultado.get("portafolio", []) if q["tipo"] == "Core"])
-            st.metric("Quinielas Core", cores)
-
-        with col4:
-            satelites = len([q for q in resultado.get("portafolio", []) if q["tipo"] == "Satelite"])
-            st.metric("Satélites", satelites)
-        
-        with col5:
-            empates_prom = resultado.get("metricas", {}).get("empates_estadisticas", {}).get("promedio", 0)
-            st.metric("Empates Promedio", f"{empates_prom:.1f}")
-
-        if not es_valido:
-            st.warning("⚠️ **El portafolio tiene problemas de validación**")
-        else:
-            st.success("✅ **Todas las reglas de validación cumplidas**")
-        
-        st.info("📊 Ve a las pestañas **Resultados** y **Validación** para más detalles")
-
-    def mostrar_progreso_optimizacion(self):
-        """Mostrar progreso durante la optimización"""
-        st.info("⏳ Optimización en progreso...")
-
-    def tab_resultados(self):
-        """Tab para mostrar resultados de la optimización"""
-        st.header("📈 Resultados de la Optimización")
-
-        if 'resultado_optimizacion' not in st.session_state or not st.session_state.resultado_optimizacion.get("success"):
-            st.info("🔄 Ejecuta una optimización exitosa primero en la pestaña 'Optimización'")
-            return
-
-        resultado = st.session_state.resultado_optimizacion
-        portafolio = resultado["portafolio"]
-        partidos = resultado["partidos"]
-        metricas = resultado["metricas"]
-
-        self.mostrar_resumen_ejecutivo(portafolio, metricas)
-        self.crear_visualizaciones(portafolio, partidos, metricas)
-        self.mostrar_tabla_quinielas(portafolio, partidos)
-        self.mostrar_opciones_descarga(resultado)
-
-    def mostrar_resumen_ejecutivo(self, portafolio, metricas):
-        """Mostrar resumen ejecutivo de resultados"""
-        st.subheader("📋 Resumen Ejecutivo")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Total Quinielas", len(portafolio))
-        
-        with col2:
-            cores = len([q for q in portafolio if q["tipo"] == "Core"])
-            st.metric("Quinielas Core", cores)
-        
-        with col3:
-            satelites = len([q for q in portafolio if q["tipo"] == "Satelite"])
-            st.metric("Satélites", satelites)
-        
-        with col4:
-            empates_prom = metricas.get("empates_estadisticas", {}).get("promedio", 0)
-            st.metric("Empates Promedio", f"{empates_prom:.1f}")
-
-        # Distribución global
-        if "distribucion_global" in metricas:
-            dist = metricas["distribucion_global"]["porcentajes"]
-            st.subheader("Distribución Global del Portafolio")
-            
-            col_a, col_b, col_c = st.columns(3)
-            with col_a:
-                st.metric("Locales (L)", f"{dist['L']:.1%}", 
-                         delta=f"Objetivo: 35-41%")
-            with col_b:
-                st.metric("Empates (E)", f"{dist['E']:.1%}", 
-                         delta=f"Objetivo: 25-33%")
-            with col_c:
-                st.metric("Visitantes (V)", f"{dist['V']:.1%}", 
-                         delta=f"Objetivo: 30-36%")
-
-    def crear_visualizaciones(self, portafolio, partidos, metricas):
-        """Crear visualizaciones de los resultados - VERSIÓN ROBUSTA"""
-        st.subheader("📊 Visualizaciones")
-
-        try:
-            col1, col2 = st.columns(2)
-
-            with col1:
-                try:
-                    fig_tipos = self.grafico_distribucion_tipos_seguro(portafolio)
-                    if fig_tipos:
-                        st.plotly_chart(fig_tipos, use_container_width=True)
-                    else:
-                        st.warning("No se pudo generar gráfico de distribución")
-                except Exception as e:
-                    st.error(f"Error en gráfico de tipos: {str(e)}")
-                    # Mostrar gráfico alternativo simple
-                    self.mostrar_tabla_distribucion_simple(portafolio)
-
-            with col2:
-                try:
-                    fig_empates = self.grafico_empates_distribucion_seguro(portafolio)
-                    if fig_empates:
-                        st.plotly_chart(fig_empates, use_container_width=True)
-                    else:
-                        st.warning("No se pudo generar gráfico de empates")
-                except Exception as e:
-                    st.error(f"Error en gráfico de empates: {str(e)}")
-                    self.mostrar_estadisticas_empates_simple(portafolio)
-
-            # Gráfico de clasificación - con manejo robusto
-            try:
-                fig_clasificacion = self.grafico_clasificacion_partidos_seguro(partidos)
-                if fig_clasificacion:
-                    st.plotly_chart(fig_clasificacion, use_container_width=True)
+            if st.button("▶️ Validar Datos", type="primary"):
+                datos = st.session_state.datos_raw
+                
+                with st.spinner("Validando datos..."):
+                    es_valido, errores = self.data_validator.validar_estructura(datos)
+                    
+                    st.session_state.datos_validados = es_valido
+                    st.session_state.errores_validacion = errores
+                
+                # Mostrar resultados
+                if es_valido:
+                    st.success("✅ **DATOS VÁLIDOS** - Listos para el Paso 2")
+                    
+                    # Estadísticas
+                    col_a, col_b, col_c = st.columns(3)
+                    with col_a:
+                        st.metric("Total Partidos", len(datos))
+                    with col_b:
+                        ligas = len(set(p['liga'] for p in datos))
+                        st.metric("Ligas", ligas)
+                    with col_c:
+                        suma_L = sum(p['prob_local'] for p in datos)
+                        st.metric("Suma P(L)", f"{suma_L:.2f}")
+                    
+                    # Guardar para siguientes pasos
+                    st.session_state.datos_paso1 = datos
+                    
                 else:
-                    st.info("Clasificación de partidos no disponible")
-            except Exception as e:
-                st.error(f"Error en gráfico de clasificación: {str(e)}")
-                self.mostrar_clasificacion_simple(partidos)
-
-        except Exception as e:
-            st.error(f"Error general en visualizaciones: {str(e)}")
-            st.info("Mostrando información básica en formato de tabla")
-            self.mostrar_resumen_basico_seguro(portafolio, partidos, metricas)
-
-    def grafico_distribucion_tipos_seguro(self, portafolio):
-        """Gráfico de distribución L/E/V por tipo de quiniela - VERSIÓN SEGURA"""
-        try:
-            if not portafolio or len(portafolio) == 0:
-                return None
-
-            # Validar que el portafolio tenga la estructura correcta
-            for q in portafolio:
-                if not isinstance(q, dict) or 'tipo' not in q or 'distribución' not in q:
-                    return None
-
-            # Agrupar datos por tipo con validación
-            datos_por_tipo = {}
+                    st.error("❌ **DATOS INVÁLIDOS**")
+                    
+                    # Mostrar errores específicos
+                    for error in errores:
+                        st.error(f"• {error}")
+                    
+                    # Opción para corregir manualmente
+                    with st.expander("🔧 Intentar Corrección Manual"):
+                        st.warning("Los siguientes controles permiten ajustar datos manualmente")
+                        
+                        # Aquí podrías agregar controles para ajustar probabilidades manualmente
+                        st.info("💡 Funcionalidad de corrección manual pendiente de implementar")
             
-            for quiniela in portafolio:
-                tipo = quiniela.get("tipo", "Desconocido")
-                dist = quiniela.get("distribución", {})
-                
-                if tipo not in datos_por_tipo:
-                    datos_por_tipo[tipo] = {"L": 0, "E": 0, "V": 0, "count": 0}
-                
-                # Validar que la distribución tenga las claves correctas
-                if isinstance(dist, dict):
-                    datos_por_tipo[tipo]["L"] += dist.get("L", 0)
-                    datos_por_tipo[tipo]["E"] += dist.get("E", 0)
-                    datos_por_tipo[tipo]["V"] += dist.get("V", 0)
-                    datos_por_tipo[tipo]["count"] += 1
-
-            if not datos_por_tipo:
-                return None
-
-            # Crear datos para el gráfico
-            tipos = list(datos_por_tipo.keys())
-            l_values = []
-            e_values = []
-            v_values = []
-
-            for tipo in tipos:
-                count = datos_por_tipo[tipo]["count"]
-                if count > 0:
-                    l_values.append(datos_por_tipo[tipo]["L"] / count)
-                    e_values.append(datos_por_tipo[tipo]["E"] / count)
-                    v_values.append(datos_por_tipo[tipo]["V"] / count)
+            # Mostrar estado de validación
+            if 'datos_validados' in st.session_state:
+                if st.session_state.datos_validados:
+                    st.success("✅ Datos validados - Procede al **PASO 2: Clasificación**")
                 else:
-                    l_values.append(0)
-                    e_values.append(0)
-                    v_values.append(0)
-
-            # Crear gráfico con validación
-            fig = go.Figure()
+                    st.error("❌ Datos no válidos - Corrige los errores arriba")
+    
+    def paso_2_clasificacion(self):
+        """PASO 2: Clasificación de partidos solamente"""
+        st.header("🏷️ PASO 2: Clasificación de Partidos")
+        st.markdown("**Objetivo**: Clasificar cada partido como Ancla/Divisor/TendenciaEmpate/Neutro")
+        
+        # Verificar prerequisitos
+        if 'datos_paso1' not in st.session_state:
+            st.warning("⚠️ Primero completa el **PASO 1: Datos**")
+            return
+        
+        if not st.session_state.get('datos_validados', False):
+            st.error("❌ Los datos del Paso 1 no están validados")
+            return
+        
+        st.success("✅ Prerequisitos cumplidos")
+        
+        # Botón para ejecutar clasificación
+        if st.button("▶️ Ejecutar Clasificación", type="primary"):
+            with st.spinner("Clasificando partidos..."):
+                try:
+                    # Tomar datos del paso anterior
+                    datos = st.session_state.datos_paso1
+                    
+                    # Aplicar calibración bayesiana primero
+                    st.info("🔄 Aplicando calibración bayesiana...")
+                    partidos_calibrados = self.calibrator.calibrar_concurso_completo(datos)
+                    
+                    # Clasificar cada partido
+                    st.info("🔄 Clasificando partidos...")
+                    partidos_clasificados = []
+                    
+                    for i, partido in enumerate(partidos_calibrados):
+                        clasificacion = self.classifier.clasificar_partido(partido)
+                        partido_final = {
+                            **partido,
+                            "id": i,
+                            "clasificacion": clasificacion
+                        }
+                        partidos_clasificados.append(partido_final)
+                    
+                    # Guardar resultados
+                    st.session_state.partidos_clasificados = partidos_clasificados
+                    st.session_state.estadisticas_clasificacion = self.classifier.obtener_estadisticas_clasificacion(partidos_clasificados)
+                    
+                    st.success("✅ Clasificación completada")
+                    
+                except Exception as e:
+                    st.error(f"❌ Error en clasificación: {e}")
+                    st.exception(e)
+        
+        # Mostrar resultados de clasificación
+        if 'partidos_clasificados' in st.session_state:
+            st.markdown("---")
+            st.subheader("📋 Resultados de Clasificación")
             
-            fig.add_trace(go.Bar(
-                name='Locales (L)', 
-                x=tipos, 
-                y=l_values, 
-                marker_color='blue',
-                text=[f"{v:.1f}" for v in l_values],
-                textposition='auto'
-            ))
+            partidos = st.session_state.partidos_clasificados
+            stats = st.session_state.estadisticas_clasificacion
             
-            fig.add_trace(go.Bar(
-                name='Empates (E)', 
-                x=tipos, 
-                y=e_values, 
-                marker_color='gray',
-                text=[f"{v:.1f}" for v in e_values],
-                textposition='auto'
-            ))
+            # Estadísticas por tipo
+            col1, col2, col3, col4 = st.columns(4)
             
-            fig.add_trace(go.Bar(
-                name='Visitantes (V)', 
-                x=tipos, 
-                y=v_values, 
-                marker_color='red',
-                text=[f"{v:.1f}" for v in v_values],
-                textposition='auto'
-            ))
-            
-            fig.update_layout(
-                title='Distribución Promedio L/E/V por Tipo de Quiniela',
-                xaxis_title='Tipo de Quiniela',
-                yaxis_title='Promedio de Resultados',
-                barmode='group',
-                showlegend=True,
-                height=400
-            )
-            
-            return fig
-
-        except Exception as e:
-            st.error(f"Error creando gráfico de distribución: {e}")
-            return None
-
-    def grafico_empates_distribucion_seguro(self, portafolio):
-        """Histograma de distribución de empates - VERSIÓN SEGURA"""
-        try:
-            if not portafolio or len(portafolio) == 0:
-                return None
-
-            # Extraer datos de empates con validación
-            empates_data = []
-            for q in portafolio:
-                if isinstance(q, dict) and 'empates' in q:
-                    empates = q.get('empates', 0)
-                    if isinstance(empates, (int, float)) and 0 <= empates <= 14:
-                        empates_data.append(int(empates))
-
-            if not empates_data:
-                return None
-
-            # Crear histograma
-            fig = go.Figure()
-            
-            fig.add_trace(go.Histogram(
-                x=empates_data,
-                nbinsx=max(1, max(empates_data) - min(empates_data) + 1),
-                marker_color='lightblue',
-                opacity=0.7,
-                name='Distribución de Empates'
-            ))
-
-            # Agregar líneas de referencia para rangos válidos
-            fig.add_vline(x=4, line_dash="dash", line_color="green", 
-                          annotation_text="Mín (4)")
-            fig.add_vline(x=6, line_dash="dash", line_color="green", 
-                          annotation_text="Máx (6)")
-
-            fig.update_layout(
-                title='Distribución de Empates por Quiniela',
-                xaxis_title='Número de Empates',
-                yaxis_title='Frecuencia',
-                showlegend=False,
-                height=400
-            )
-
-            return fig
-
-        except Exception as e:
-            st.error(f"Error creando gráfico de empates: {e}")
-            return None
-
-    def grafico_clasificacion_partidos_seguro(self, partidos):
-        """Gráfico de clasificación de partidos - VERSIÓN SEGURA"""
-        try:
-            if not partidos or len(partidos) == 0:
-                return None
-
-            # Contar clasificaciones con validación
-            clasificaciones = {}
-            for partido in partidos:
-                if isinstance(partido, dict):
-                    clase = partido.get("clasificacion", "Sin clasificar")
-                    if isinstance(clase, str):
-                        clasificaciones[clase] = clasificaciones.get(clase, 0) + 1
-
-            if not clasificaciones:
-                return None
-
-            # Crear gráfico de pastel
-            labels = list(clasificaciones.keys())
-            values = list(clasificaciones.values())
-            
-            fig = go.Figure()
-            
-            fig.add_trace(go.Pie(
-                labels=labels,
-                values=values,
-                hole=0.3,
-                marker_colors=['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57'][:len(labels)]
-            ))
-
-            fig.update_layout(
-                title='Clasificación de Partidos',
-                showlegend=True,
-                height=400
-            )
-
-            return fig
-
-        except Exception as e:
-            st.error(f"Error creando gráfico de clasificación: {e}")
-            return None
-
-    def mostrar_tabla_distribucion_simple(self, portafolio):
-        """Mostrar distribución en formato de tabla simple"""
-        try:
-            datos_tipo = {}
-            for q in portafolio:
-                tipo = q.get('tipo', 'Desconocido')
-                if tipo not in datos_tipo:
-                    datos_tipo[tipo] = {'L': 0, 'E': 0, 'V': 0, 'count': 0}
-                
-                dist = q.get('distribución', {})
-                datos_tipo[tipo]['L'] += dist.get('L', 0)
-                datos_tipo[tipo]['E'] += dist.get('E', 0)
-                datos_tipo[tipo]['V'] += dist.get('V', 0)
-                datos_tipo[tipo]['count'] += 1
-
-            st.write("**Distribución por Tipo:**")
-            for tipo, datos in datos_tipo.items():
-                count = datos['count']
-                if count > 0:
-                    st.write(f"- **{tipo}**: L={datos['L']/count:.1f}, E={datos['E']/count:.1f}, V={datos['V']/count:.1f}")
-        except Exception as e:
-            st.write(f"Error mostrando distribución: {e}")
-
-    def mostrar_estadisticas_empates_simple(self, portafolio):
-        """Mostrar estadísticas de empates en formato simple"""
-        try:
-            empates = [q.get('empates', 0) for q in portafolio if 'empates' in q]
-            if empates:
-                st.write("**Estadísticas de Empates:**")
-                st.write(f"- Promedio: {np.mean(empates):.1f}")
-                st.write(f"- Mínimo: {min(empates)}")
-                st.write(f"- Máximo: {max(empates)}")
-        except Exception as e:
-            st.write(f"Error mostrando estadísticas de empates: {e}")
-
-    def mostrar_clasificacion_simple(self, partidos):
-        """Mostrar clasificación en formato simple"""
-        try:
-            clasificaciones = {}
-            for p in partidos:
-                clase = p.get('clasificacion', 'Sin clasificar')
-                clasificaciones[clase] = clasificaciones.get(clase, 0) + 1
-            
-            st.write("**Clasificación de Partidos:**")
-            for clase, count in clasificaciones.items():
-                st.write(f"- {clase}: {count} partidos")
-        except Exception as e:
-            st.write(f"Error mostrando clasificación: {e}")
-
-    def mostrar_resumen_basico_seguro(self, portafolio, partidos, metricas):
-        """Mostrar resumen básico cuando fallan los gráficos"""
-        try:
-            st.subheader("📊 Resumen Básico")
-            
-            col1, col2, col3 = st.columns(3)
-            
+            distribución = stats["distribución"]
             with col1:
-                st.metric("Total Quinielas", len(portafolio))
-                cores = len([q for q in portafolio if q.get("tipo") == "Core"])
-                st.metric("Quinielas Core", cores)
-            
+                st.metric("Anclas", distribución.get("Ancla", 0), help="Partidos >60% probabilidad")
             with col2:
-                satelites = len([q for q in portafolio if q.get("tipo") == "Satelite"])
-                st.metric("Satélites", satelites)
-                empates_prom = np.mean([q.get('empates', 0) for q in portafolio if 'empates' in q])
-                st.metric("Empates Promedio", f"{empates_prom:.1f}")
-            
+                st.metric("Divisores", distribución.get("Divisor", 0), help="Partidos 40-60% probabilidad")
             with col3:
-                st.metric("Partidos", len(partidos))
-                if metricas and 'distribucion_global' in metricas:
-                    dist = metricas['distribucion_global']['porcentajes']
-                    st.write(f"**Distribución Global:**")
-                    st.write(f"L: {dist.get('L', 0):.1%}")
-                    st.write(f"E: {dist.get('E', 0):.1%}")
-                    st.write(f"V: {dist.get('V', 0):.1%}")
-
-        except Exception as e:
-            st.error(f"Error en resumen básico: {e}")
-            st.write("Datos del portafolio no disponibles para mostrar")
-
-    def mostrar_tabla_quinielas(self, portafolio, partidos):
-        """Mostrar tabla interactiva de quinielas - CORREGIDA CON NOMBRES Y TIPO DE DATO PAR"""
-        st.subheader("🎯 Quinielas Generadas")
-
-        if not partidos:
-            st.warning("No hay datos de partidos para mostrar en la tabla.")
-            return
-
-        partidos_info = [f"{p.get('home', 'N/A')} vs {p.get('away', 'N/A')}" for p in partidos]
-
-        data_tabla = []
-        for quiniela in portafolio:
-            resultados_quiniela = quiniela.get("resultados", [])
-            fila = {
-                "ID": quiniela.get("id", "N/A"),
-                "Tipo": quiniela.get("tipo", "N/A"),
-                "Par": str(quiniela.get("par_id", "")),
-                "Quiniela": "".join(resultados_quiniela),
-                "Empates": resultados_quiniela.count("E"),
-                "L": resultados_quiniela.count("L"),
-                "E": resultados_quiniela.count("E"),
-                "V": resultados_quiniela.count("V")
-            }
-            # Agregar partidos individuales
-            for i, resultado in enumerate(resultados_quiniela):
-                partido_desc = f"{partidos_info[i][:20]}..." if i < len(partidos_info) else f"P{i+1}"
-                fila[f"P{i+1}"] = f"{resultado}"
-            data_tabla.append(fila)
-
-        if not data_tabla:
-            st.info("No hay quinielas en el portafolio para mostrar.")
-            return
-
-        df_quinielas = pd.DataFrame(data_tabla)
-
-        # Filtros
-        col_filtro1, col_filtro2 = st.columns(2)
-        with col_filtro1:
-            tipos_disponibles = df_quinielas["Tipo"].unique()
-            tipos_seleccionados = st.multiselect(
-                "Filtrar por tipo:",
-                options=tipos_disponibles,
-                default=tipos_disponibles
-            )
-        with col_filtro2:
-            empates_min = int(df_quinielas["Empates"].min())
-            empates_max = int(df_quinielas["Empates"].max())
-            if empates_min == empates_max:
-                st.info(f"📊 Todas las quinielas tienen {empates_min} empates")
-                rango_empates = (empates_min, empates_max)
-            else:
-                rango_empates = st.slider(
-                    "Filtrar por número de empates:",
-                    min_value=empates_min,
-                    max_value=empates_max,
-                    value=(empates_min, empates_max)
-                )
-
-        # Aplicar filtros
-        df_filtrado = df_quinielas[
-            (df_quinielas["Tipo"].isin(tipos_seleccionados)) &
-            (df_quinielas["Empates"] >= rango_empates[0]) &
-            (df_quinielas["Empates"] <= rango_empates[1])
-        ]
-        
-        with st.expander("📋 Ver Partidos del Concurso"):
-            partidos_df = pd.DataFrame([
-                {"#": i+1, "Partido": f"{p.get('home', 'N/A')} vs {p.get('away', 'N/A')}", "Clasificación": p.get('clasificacion', 'N/A')}
+                st.metric("Tend. Empate", distribución.get("TendenciaEmpate", 0), help="Partidos con tendencia al empate")
+            with col4:
+                st.metric("Neutros", distribución.get("Neutro", 0), help="Resto de partidos")
+            
+            # Tabla detallada
+            st.subheader("🔍 Detalle por Partido")
+            
+            detalle_df = pd.DataFrame([
+                {
+                    "#": i+1,
+                    "Partido": f"{p['home']} vs {p['away']}",
+                    "P(L)": f"{p['prob_local']:.3f}",
+                    "P(E)": f"{p['prob_empate']:.3f}",
+                    "P(V)": f"{p['prob_visitante']:.3f}",
+                    "Clasificación": p['clasificacion'],
+                    "Max Prob": f"{max(p['prob_local'], p['prob_empate'], p['prob_visitante']):.3f}"
+                }
                 for i, p in enumerate(partidos)
             ])
-            st.dataframe(partidos_df, use_container_width=True, hide_index=True)
-
-        st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
-        st.caption(f"Mostrando {len(df_filtrado)} de {len(df_quinielas)} quinielas")
-
-    def mostrar_opciones_descarga(self, resultado):
-        """Mostrar opciones de descarga de archivos"""
-        st.subheader("💾 Descargar Resultados")
-
-        archivos = resultado.get("archivos_exportados", {})
-
-        if archivos:
-            st.success(f"✅ Se generaron {len(archivos)} archivos:")
-
-            for tipo, ruta in archivos.items():
-                if os.path.exists(ruta):
-                    with open(ruta, 'rb') as file:
-                        st.download_button(
-                            label=f"📄 Descargar {tipo}",
-                            data=file.read(),
-                            file_name=os.path.basename(ruta),
-                            mime='application/octet-stream'
-                        )
-        else:
-            st.warning("No se encontraron archivos exportados")
-
-# Reemplazar la función mostrar_ventana_debug_ai en streamlit_app.py con esta versión mejorada:
-
-    def mostrar_ventana_debug_ai_mejorado(self):
-        """
-        NUEVA FUNCIÓN: Ventana de debug mejorada y más clara para la IA
-        """
+            
+            # Colorear por clasificación
+            def color_clasificacion(val):
+                colors = {
+                    "Ancla": "background-color: #90EE90",
+                    "Divisor": "background-color: #FFE4B5", 
+                    "TendenciaEmpate": "background-color: #87CEEB",
+                    "Neutro": "background-color: #F0F0F0"
+                }
+                return colors.get(val, "")
+            
+            styled_df = detalle_df.style.applymap(color_clasificacion, subset=['Clasificación'])
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            
+            # Verificar si hay suficientes anclas
+            num_anclas = distribución.get("Ancla", 0)
+            if num_anclas == 0:
+                st.error("❌ **PROBLEMA CRÍTICO**: No hay partidos Ancla. Las quinielas Core no se podrán generar correctamente.")
+                st.warning("💡 Necesitas al menos 2-3 partidos Ancla para un portafolio estable")
+            elif num_anclas < 2:
+                st.warning(f"⚠️ Solo {num_anclas} Ancla detectada. Se recomienda al menos 2-3 para estabilidad")
+            else:
+                st.success(f"✅ {num_anclas} Anclas detectadas - Suficiente para generar Core estables")
+            
+            # Botón para continuar al paso 3
+            if num_anclas > 0:
+                st.success("✅ Clasificación válida - Procede al **PASO 3: Generación**")
+            else:
+                st.error("❌ Clasificación problemática - Revisa los datos o ajusta umbrales")
+    
+    def paso_3_generacion(self):
+        """PASO 3: Generación de quinielas Core solamente"""
+        st.header("🎯 PASO 3: Generación de Quinielas Core")
+        st.markdown("**Objetivo**: Generar solo 4 quinielas Core (sin satélites por ahora)")
         
-        st.subheader("🤖 Debug de Comunicación con IA")
-        
-        # Control principal
-        if st.button("🔍 Activar Debug Detallado de IA", type="secondary"):
-            st.session_state.debug_ai_detallado = True
-            st.info("✅ Debug detallado activado. Los próximos usos de IA mostrarán información completa aquí.")
-        
-        # Mostrar estado actual
-        debug_activo = st.session_state.get('debug_ai_detallado', False)
-        if debug_activo:
-            st.success("🔍 **Debug de IA ACTIVO** - Se capturarán todos los detalles")
-        else:
-            st.info("ℹ️ Debug de IA inactivo - Actívalo arriba para ver detalles")
-        
-        # Mostrar historial si existe
-        if hasattr(st.session_state, 'ai_debug_detallado') and st.session_state.ai_debug_detallado:
-            self._mostrar_historial_debug_detallado()
-        
-        # Estadísticas de uso
-        if 'ai_usage_stats' in st.session_state:
-            self._mostrar_estadisticas_uso_ai()
-
-    def _mostrar_historial_debug_detallado(self):
-        """
-        Muestra el historial de debug de manera organizada
-        """
-        historial = st.session_state.get('ai_debug_detallado', [])
-        
-        if not historial:
-            st.info("No hay interacciones de debug todavía. Ejecuta una optimización con IA para ver datos.")
+        # Verificar prerequisitos
+        if 'partidos_clasificados' not in st.session_state:
+            st.warning("⚠️ Primero completa el **PASO 2: Clasificación**")
             return
         
-        st.markdown("### 📋 Historial de Interacciones con IA")
+        stats = st.session_state.estadisticas_clasificacion
+        if stats["distribución"].get("Ancla", 0) == 0:
+            st.error("❌ No hay partidos Ancla para generar quinielas Core")
+            return
         
-        # Filtros
-        col1, col2 = st.columns(2)
-        with col1:
-            mostrar_solo_exitosas = st.checkbox("Mostrar solo correcciones exitosas", value=False)
-        with col2:
-            mostrar_solo_fallos = st.checkbox("Mostrar solo fallos", value=False)
+        st.success("✅ Prerequisitos cumplidos")
         
-        # Filtrar historial
-        historial_filtrado = historial
-        if mostrar_solo_exitosas:
-            historial_filtrado = [h for h in historial if h.get('exito', False)]
-        elif mostrar_solo_fallos:
-            historial_filtrado = [h for h in historial if not h.get('exito', False)]
+        # Mostrar información de partidos Ancla
+        partidos = st.session_state.partidos_clasificados
+        anclas = [p for p in partidos if p['clasificacion'] == 'Ancla']
         
-        # Mostrar cada interacción
-        for i, debug_info in enumerate(reversed(historial_filtrado[-10:])):  # Últimas 10
-            self._mostrar_interaccion_debug(debug_info, i)
-
-    def _mostrar_interaccion_debug(self, debug_info: dict, index: int):
-        """
-        Muestra una sola interacción de debug de manera clara
-        """
-        quiniela_id = debug_info.get('quiniela_original', {}).get('id', 'Unknown')
-        exito = debug_info.get('exito', False)
-        timestamp = debug_info.get('timestamp', 'N/A')
+        with st.expander(f"📌 Partidos Ancla Detectados ({len(anclas)})"):
+            for ancla in anclas:
+                max_prob = max(ancla['prob_local'], ancla['prob_empate'], ancla['prob_visitante'])
+                resultado_ancla = 'L' if ancla['prob_local'] == max_prob else ('E' if ancla['prob_empate'] == max_prob else 'V')
+                st.write(f"• **{ancla['home']} vs {ancla['away']}** → {resultado_ancla} ({max_prob:.3f})")
         
-        # Header con estado
-        with st.expander(f"{'✅' if exito else '❌'} {quiniela_id} - {timestamp}", 
-                         expanded=(index == 0)):  # Solo expandir el más reciente
+        # Botón para generar Core
+        if st.button("▶️ Generar 4 Quinielas Core", type="primary"):
+            with st.spinner("Generando quinielas Core..."):
+                try:
+                    # Usar el generador de Core existente
+                    quinielas_core = self.core_generator.generar_quinielas_core(partidos)
+                    
+                    # Guardar resultados
+                    st.session_state.quinielas_generadas = quinielas_core
+                    st.session_state.tipo_generacion = "Solo Core"
+                    
+                    st.success(f"✅ Generadas {len(quinielas_core)} quinielas Core")
+                    
+                except Exception as e:
+                    st.error(f"❌ Error generando Core: {e}")
+                    st.exception(e)
+        
+        # Mostrar quinielas generadas
+        if 'quinielas_generadas' in st.session_state:
+            st.markdown("---")
+            st.subheader("📋 Quinielas Core Generadas")
             
-            # Información básica
-            col1, col2 = st.columns(2)
+            quinielas = st.session_state.quinielas_generadas
             
+            # Estadísticas rápidas
+            col1, col2, col3 = st.columns(3)
             with col1:
-                st.markdown("**📊 Información Básica**")
-                st.write(f"• **Quiniela:** {quiniela_id}")
-                st.write(f"• **Estado:** {'✅ Exitosa' if exito else '❌ Falló'}")
-                
-                problemas = debug_info.get('problemas_detectados', [])
-                if problemas:
-                    st.write("• **Problemas detectados:**")
-                    for problema in problemas:
-                        st.write(f"  - {problema}")
-                
-                mejora = debug_info.get('mejora', 0)
-                if mejora > 0:
-                    st.write(f"• **Mejora:** -{mejora} problemas")
-            
+                st.metric("Quinielas", len(quinielas))
             with col2:
-                st.markdown("**🔧 Cambios Realizados**")
-                cambios = debug_info.get('cambios_realizados', [])
-                if cambios:
-                    for cambio in cambios[:5]:  # Mostrar máximo 5
-                        st.write(f"• {cambio}")
-                    if len(cambios) > 5:
-                        st.write(f"• ... y {len(cambios)-5} cambios más")
-                else:
-                    st.write("No se realizaron cambios")
+                empates_promedio = sum(q['empates'] for q in quinielas) / len(quinielas)
+                st.metric("Empates Promedio", f"{empates_promedio:.1f}")
+            with col3:
+                # Verificar si todas tienen los mismos resultados en anclas
+                anclas_indices = [i for i, p in enumerate(partidos) if p['clasificacion'] == 'Ancla']
+                anclas_consistentes = True
+                if anclas_indices and len(quinielas) > 1:
+                    primera_anclas = [quinielas[0]['resultados'][i] for i in anclas_indices]
+                    for q in quinielas[1:]:
+                        estas_anclas = [q['resultados'][i] for i in anclas_indices]
+                        if primera_anclas != estas_anclas:
+                            anclas_consistentes = False
+                            break
                 
-                # Razonamiento de la IA
-                razonamiento = debug_info.get('razonamiento_ai', '')
-                if razonamiento:
-                    st.write(f"**🧠 Razonamiento IA:** {razonamiento}")
+                st.metric("Anclas Consistentes", "✅" if anclas_consistentes else "❌")
             
-            # Tabs para información detallada
-            tab1, tab2, tab3, tab4 = st.tabs(["📝 Prompt Enviado", "💬 Respuesta IA", "🔧 Parsing", "❌ Errores"])
+            # Tabla de quinielas
+            quinielas_df = pd.DataFrame([
+                {
+                    "ID": q['id'],
+                    "Quiniela": "".join(q['resultados']),
+                    "Empates": q['empates'],
+                    "L": q['distribución']['L'],
+                    "E": q['distribución']['E'], 
+                    "V": q['distribución']['V']
+                }
+                for q in quinielas
+            ])
             
-            with tab1:
-                prompt = debug_info.get('prompt_enviado', 'No disponible')
-                st.code(prompt, language='text')
+            st.dataframe(quinielas_df, use_container_width=True, hide_index=True)
             
-            with tab2:
-                respuesta = debug_info.get('respuesta_ai_raw', 'No disponible')
-                st.code(respuesta, language='json')
-            
-            with tab3:
-                parsing_attempts = debug_info.get('parsing_attempts', [])
-                if parsing_attempts:
-                    for j, attempt in enumerate(parsing_attempts):
-                        method = attempt.get('method', 'unknown')
-                        success = attempt.get('success', False)
-                        
-                        st.write(f"**Intento {j+1}: {method}** {'✅' if success else '❌'}")
-                        if 'error' in attempt:
-                            st.error(f"Error: {attempt['error']}")
-                        elif 'text' in attempt:
-                            st.code(attempt['text'][:200] + "..." if len(attempt['text']) > 200 else attempt['text'])
-                else:
-                    st.info("No hay información de parsing disponible")
-            
-            with tab4:
-                errores = debug_info.get('errores', [])
-                if errores:
-                    for error in errores:
-                        st.error(error)
-                else:
-                    st.success("No hay errores registrados")
-
-    def _mostrar_estadisticas_uso_ai(self):
-        """
-        Muestra estadísticas de uso de la IA
-        """
-        stats = st.session_state.ai_usage_stats
-        
-        st.markdown("### 📊 Estadísticas de Uso de IA")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Total Llamadas", stats.get('total_calls', 0))
-        
-        with col2:
-            exitosas = stats.get('successful_calls', 0)
-            total = stats.get('total_calls', 1)
-            tasa_exito = (exitosas / total) * 100 if total > 0 else 0
-            st.metric("Tasa de Éxito", f"{tasa_exito:.1f}%")
-        
-        with col3:
-            st.metric("Fallos", stats.get('failed_calls', 0))
-        
-        with col4:
-            costo_estimado = stats.get('total_calls', 0) * 0.003  # Estimación conservadora
-            st.metric("Costo Est.", f"${costo_estimado:.3f}")
-
-    # También agregar esta función para integrar el debug detallado en el proceso de optimización
-    def ejecutar_optimizacion_con_debug_detallado(self, optimizer, progress_callback=None, forzar_ai=False):
-        """
-        NUEVA FUNCIÓN: Ejecutar optimización con debug detallado de IA
-        """
-        # Activar debug si está habilitado
-        if st.session_state.get('debug_ai_detallado', False):
-            st.session_state.ai_debug_detallado = []
-            
-            # Modificar el optimizador para usar debug detallado
-            if hasattr(optimizer, 'ai_assistant') and optimizer.ai_assistant.enabled:
-                original_corregir = optimizer.ai_assistant.corregir_quiniela_invalida
+            # Verificar problemas básicos
+            problemas = []
+            for q in quinielas:
+                if q['empates'] < 4 or q['empates'] > 6:
+                    problemas.append(f"{q['id']}: {q['empates']} empates (debe ser 4-6)")
                 
-                def corregir_con_debug(quiniela, partidos, reglas_violadas):
-                    debug_info = optimizer.ai_assistant.debug_correccion_detallada(quiniela, partidos, reglas_violadas)
-                    debug_info['timestamp'] = time.strftime('%H:%M:%S')
-                    
-                    # Guardar en session_state
-                    if 'ai_debug_detallado' not in st.session_state:
-                        st.session_state.ai_debug_detallado = []
-                    st.session_state.ai_debug_detallado.append(debug_info)
-                    
-                    # Retornar resultado como siempre
-                    if debug_info.get('exito', False):
-                        return debug_info.get('quiniela_corregida')
-                    else:
-                        return None
-                
-                # Reemplazar temporalmente la función
-                optimizer.ai_assistant.corregir_quiniela_invalida = corregir_con_debug
+                max_conc = max(q['distribución'].values()) / 14
+                if max_conc > 0.70:
+                    signo = max(q['distribución'], key=q['distribución'].get)
+                    problemas.append(f"{q['id']}: concentración {signo} = {max_conc:.1%} (>70%)")
+            
+            if problemas:
+                st.warning("⚠️ **Problemas detectados en quinielas Core:**")
+                for problema in problemas:
+                    st.warning(f"• {problema}")
+            else:
+                st.success("✅ Todas las quinielas Core cumplen reglas básicas")
+            
+            st.success("✅ Generación completada - Procede al **PASO 4: Validación**")
+    
+    def paso_4_validacion(self):
+        """PASO 4: Validación regla por regla"""
+        st.header("✅ PASO 4: Validación del Portafolio")
+        st.markdown("**Objetivo**: Validar cada regla por separado para identificar problemas específicos")
         
-        # Ejecutar optimización normal
-        return self.ejecutar_optimizacion_directo(optimizer, progress_callback, forzar_ai)
-
-    # Y finalmente, modificar el tab_validacion para usar la nueva función:
-    def tab_validacion_mejorado(self):
-        """
-        Tab de validación mejorado con debug de IA integrado
-        """
-        st.header("📋 Validación del Portafolio")
-
-        if 'resultado_optimizacion' not in st.session_state or not st.session_state.resultado_optimizacion.get("success"):
-            st.info("🔄 Ejecuta la optimización primero")
+        # Verificar prerequisitos
+        if 'quinielas_generadas' not in st.session_state:
+            st.warning("⚠️ Primero completa el **PASO 3: Generación**")
             return
-
-        resultado = st.session_state.resultado_optimizacion
-        validacion = resultado["validacion"]
-
-        es_valido = validacion.get("es_valido", False)
-        if es_valido:
-            st.success("✅ PORTAFOLIO VÁLIDO - Cumple todas las reglas obligatorias")
-        else:
-            st.error("❌ PORTAFOLIO INVÁLIDO - No cumple algunas reglas")
-
-        # Mostrar ventana de debug mejorada
-        self.mostrar_ventana_debug_ai_mejorado()
-
-        # Resto del código de validación...
-        st.subheader("Detalle de Validaciones")
         
-        validaciones = validacion.get("detalle_validaciones", {})
-        descripciones = {
-            "distribucion_global": "Distribución en rangos históricos (35-41% L, 25-33% E, 30-36% V)",
-            "empates_individuales": "4-6 empates por quiniela",
-            "concentracion_maxima": "≤70% concentración general, ≤60% en primeros 3 partidos",
-            "arquitectura_core_satelites": "4 Core + 26 Satélites en 13 pares",
-            "correlacion_jaccard": "Correlación Jaccard ≤ 0.57 entre pares de satélites",
-            "distribucion_divisores": "Distribución equilibrada de resultados"
-        }
-
-        for regla, cumple in validaciones.items():
-            with st.container():
+        st.success("✅ Prerequisitos cumplidos")
+        
+        # Botón para validar
+        if st.button("▶️ Ejecutar Validación Completa", type="primary"):
+            with st.spinner("Validando portafolio..."):
+                try:
+                    quinielas = st.session_state.quinielas_generadas
+                    
+                    # Ejecutar validación usando el validador existente
+                    resultado_validacion = self.validator.validar_portafolio_completo(quinielas)
+                    
+                    # Guardar resultados
+                    st.session_state.validacion_completa = resultado_validacion
+                    
+                    st.success("✅ Validación completada")
+                    
+                except Exception as e:
+                    st.error(f"❌ Error en validación: {e}")
+                    st.exception(e)
+        
+        # Mostrar resultados de validación
+        if 'validacion_completa' in st.session_state:
+            st.markdown("---")
+            validacion = st.session_state.validacion_completa
+            
+            # Estado general
+            if validacion['es_valido']:
+                st.success("🎉 **PORTAFOLIO COMPLETAMENTE VÁLIDO**")
+            else:
+                st.error("❌ **PORTAFOLIO INVÁLIDO** - Revisa reglas específicas")
+            
+            # Detalle regla por regla
+            st.subheader("📋 Detalle por Regla")
+            
+            reglas = validacion['detalle_validaciones']
+            descripciones = {
+                "distribucion_global": "Distribución global en rangos históricos (35-41% L, 25-33% E, 30-36% V)",
+                "empates_individuales": "4-6 empates por quiniela individual",
+                "concentracion_maxima": "≤70% concentración general, ≤60% en primeros 3 partidos",
+                "arquitectura_core_satelites": "Arquitectura correcta (actualmente solo Core)",
+                "correlacion_jaccard": "Correlación entre pares ≤ 0.57 (no aplica para solo Core)",
+                "distribucion_divisores": "Distribución equilibrada de resultados"
+            }
+            
+            for regla, cumple in reglas.items():
                 col1, col2 = st.columns([1, 4])
+                
                 with col1:
                     if cumple:
                         st.success("✅ CUMPLE")
                     else:
                         st.error("❌ FALLA")
+                
                 with col2:
                     st.write(f"**{regla.replace('_', ' ').title()}**")
-                    st.caption(descripciones.get(regla, "Regla sin descripción."))
-
-        # Botón para re-optimizar con debug detallado
-        ai_disponible = "OPENAI_API_KEY" in os.environ or ("OPENAI_API_KEY" in st.secrets) or st.session_state.get('openai_api_key')
-        
-        if ai_disponible and not es_valido:
+                    st.caption(descripciones.get(regla, "Sin descripción"))
+                    
+                    # Mostrar detalles específicos para reglas que fallan
+                    if not cumple:
+                        if regla == "distribucion_global":
+                            self._mostrar_detalle_distribucion_global(validacion)
+                        elif regla == "empates_individuales":
+                            self._mostrar_detalle_empates_individuales()
+                        elif regla == "concentracion_maxima":
+                            self._mostrar_detalle_concentracion()
+            
+            # Resumen con próximos pasos
             st.markdown("---")
-            st.subheader("🤖 Re-optimización con Debug Detallado")
+            st.subheader("🎯 Próximos Pasos")
             
-            if st.button("🔍 Re-optimizar con Debug Completo de IA", type="primary", use_container_width=True):
-                st.session_state.debug_ai_detallado = True
-                st.session_state.ejecutar_con_ai = True
-                st.rerun()
-
-    def tab_validacion(self):
-        """Tab para mostrar detalles de validación - CON DEBUG AI MEJORADO"""
-        st.header("📋 Validación del Portafolio")
-
-        if 'resultado_optimizacion' not in st.session_state or not st.session_state.resultado_optimizacion.get("success"):
-            st.info("🔄 Ejecuta la optimización primero")
-            return
-
-        resultado = st.session_state.resultado_optimizacion
-        validacion = resultado["validacion"]
-
-        es_valido = validacion.get("es_valido", False)
-        if es_valido:
-            st.success("✅ PORTAFOLIO VÁLIDO - Cumple todas las reglas obligatorias")
-        else:
-            st.error("❌ PORTAFOLIO INVÁLIDO - No cumple algunas reglas")
-
-        # *** CAMBIO CRÍTICO: Usar la versión MEJORADA ***
-        self.mostrar_ventana_debug_ai_mejorado()  # ← Cambió de mostrar_ventana_debug_ai()
-
-        st.subheader("Detalle de Validaciones")
-
-        validaciones = validacion.get("detalle_validaciones", {})
-        descripciones = {
-            "distribucion_global": "Distribución en rangos históricos (35-41% L, 25-33% E, 30-36% V)",
-            "empates_individuales": "4-6 empates por quiniela",
-            "concentracion_maxima": "≤70% concentración general, ≤60% en primeros 3 partidos",
-            "arquitectura_core_satelites": "4 Core + 26 Satélites en 13 pares",
-            "correlacion_jaccard": "Correlación Jaccard ≤ 0.57 entre pares de satélites",
-            "distribucion_divisores": "Distribución equilibrada de resultados"
-        }
-
-        for regla, cumple in validaciones.items():
-            with st.container():
-                col1, col2 = st.columns([1, 4])
-                with col1:
-                    st.success("✅ CUMPLE") if cumple else st.error("❌ FALLA")
-                with col2:
-                    st.write(f"**{regla.replace('_', ' ').title()}**")
-                    st.caption(descripciones.get(regla, "Regla sin descripción."))
-
-        if "resumen" in validacion:
-            with st.expander("Ver Resumen Completo en Texto"):
-                st.text(validacion["resumen"])
-
-        if "metricas" in validacion:
-            with st.expander("Ver Métricas Detalladas (JSON)"):
-                st.json(validacion["metricas"])
+            if validacion['es_valido']:
+                st.success("🎉 **¡Felicitaciones!** Tu portafolio Core es completamente válido.")
+                st.info("💡 **Siguientes opciones:**")
+                st.info("• Agregar satélites para completar las 30 quinielas")
+                st.info("• Optimizar con GRASP-Annealing")
+                st.info("• Exportar las quinielas Core actuales")
+            else:
+                st.error("🔧 **Se requieren correcciones:**")
+                reglas_fallidas = [regla for regla, cumple in reglas.items() if not cumple]
+                for regla in reglas_fallidas:
+                    st.error(f"• Corregir: {regla.replace('_', ' ')}")
+                
+                st.info("💡 **Opciones de corrección:**")
+                st.info("• Volver al Paso 1 y ajustar datos")
+                st.info("• Ajustar parámetros de clasificación")
+                st.info("• Usar corrección manual/IA (próximamente)")
+    
+    def _mostrar_detalle_distribucion_global(self, validacion):
+        """Mostrar detalles específicos de distribución global"""
+        metricas = validacion.get('metricas', {})
+        if 'distribucion_global' in metricas:
+            dist = metricas['distribucion_global']['porcentajes']
+            st.warning(f"Distribución actual: L={dist['L']:.1%}, E={dist['E']:.1%}, V={dist['V']:.1%}")
+            st.info("Objetivo: L=35-41%, E=25-33%, V=30-36%")
+    
+    def _mostrar_detalle_empates_individuales(self):
+        """Mostrar detalles de empates problemáticos"""
+        if 'quinielas_generadas' in st.session_state:
+            quinielas = st.session_state.quinielas_generadas
+            problematicas = [q for q in quinielas if q['empates'] < 4 or q['empates'] > 6]
+            if problematicas:
+                st.warning("Quinielas problemáticas:")
+                for q in problematicas:
+                    st.warning(f"• {q['id']}: {q['empates']} empates")
+    
+    def _mostrar_detalle_concentracion(self):
+        """Mostrar detalles de concentración problemática"""
+        if 'quinielas_generadas' in st.session_state:
+            quinielas = st.session_state.quinielas_generadas
+            problematicas = []
+            for q in quinielas:
+                max_conc = max(q['distribución'].values()) / 14
+                if max_conc > 0.70:
+                    signo = max(q['distribución'], key=q['distribución'].get)
+                    problematicas.append(f"{q['id']}: {signo} = {max_conc:.1%}")
+            
+            if problematicas:
+                st.warning("Concentraciones problemáticas:")
+                for problema in problematicas:
+                    st.warning(f"• {problema}")
+    
+    def _convertir_csv_a_datos(self, df):
+        """Convertir DataFrame de CSV al formato interno"""
+        datos = []
+        for idx, row in df.iterrows():
+            # Verificar columnas mínimas
+            if 'home' not in row or 'away' not in row:
+                raise ValueError("CSV debe tener columnas 'home' y 'away'")
+            
+            # Probabilidades
+            if all(col in row for col in ['prob_local', 'prob_empate', 'prob_visitante']):
+                prob_local = float(row['prob_local'])
+                prob_empate = float(row['prob_empate'])
+                prob_visitante = float(row['prob_visitante'])
+                
+                # Normalizar si no suman 1
+                total = prob_local + prob_empate + prob_visitante
+                if abs(total - 1.0) > 0.01:
+                    prob_local /= total
+                    prob_empate /= total
+                    prob_visitante /= total
+            else:
+                # Generar probabilidades balanceadas
+                prob_local, prob_empate, prob_visitante = self.data_loader._generar_probabilidades_balanceadas_por_partido(idx)
+            
+            partido = {
+                'id': idx,
+                'home': str(row['home']).strip(),
+                'away': str(row['away']).strip(),
+                'liga': str(row.get('liga', 'Liga')).strip(),
+                'prob_local': prob_local,
+                'prob_empate': prob_empate,
+                'prob_visitante': prob_visitante,
+                'forma_diferencia': float(row.get('forma_diferencia', 0)),
+                'lesiones_impact': float(row.get('lesiones_impact', 0)),
+                'es_final': bool(row.get('es_final', False)),
+                'es_derbi': bool(row.get('es_derbi', False)),
+                'es_playoff': bool(row.get('es_playoff', False)),
+                'fecha': str(row.get('fecha', '2025-06-07')),
+                'jornada': int(row.get('jornada', 1)),
+                'concurso_id': str(row.get('concurso_id', '2283'))
+            }
+            datos.append(partido)
         
-        ai_disponible = "OPENAI_API_KEY" in os.environ or ("OPENAI_API_KEY" in st.secrets and st.secrets["OPENAI_API_KEY"]) or st.session_state.get('openai_api_key')
-        if ai_disponible:
-            st.markdown("---")
-            st.subheader("🤖 Asistente AI")
-            
-            if resultado.get("ai_utilizada"):
-                st.success("✅ AI fue utilizada automáticamente durante la optimización")
-            
-            if not es_valido:
-                st.error("❌ El portafolio actual tiene errores de validación")
-                if st.button("🔧 Re-optimizar con Debug Completo de IA", type="primary", use_container_width=True):
-                    st.session_state.debug_ai_detallado = True
-                    st.session_state.ejecutar_con_ai = True
-                    st.rerun()
+        return datos
 
 def main():
-    """Función principal para ejecutar la app"""
-    app = ProgolStreamlitApp()
+    """Función principal"""
+    app = StepByStepProgolApp()
     app.run()
 
 if __name__ == "__main__":
