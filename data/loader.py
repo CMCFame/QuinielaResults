@@ -193,6 +193,33 @@ class EnhancedDataLoader:
                 # Generar probabilidades balanceadas
                 base = np.random.dirichlet([1.2, 1.0, 1.1])  # Ligeramente sesgado hacia L y V
                 prob_local, prob_empate, prob_visitante = base
+        
+        elif tipo == 'csv_generado':
+            # CORRECCIÓN CRÍTICA: Generar probabilidades que garanticen Anclas
+            # Los primeros 6 partidos serán Anclas garantizadas
+            if partido_idx < 6:
+                # Generar partidos Ancla con alta probabilidad
+                resultado_tipo = partido_idx % 3  # Rotar entre L, E, V
+                
+                if resultado_tipo == 0:  # Ancla Local
+                    prob_local = np.random.uniform(0.66, 0.75)
+                    prob_empate = np.random.uniform(0.12, 0.18)
+                    prob_visitante = 1.0 - prob_local - prob_empate
+                elif resultado_tipo == 1:  # Ancla Visitante  
+                    prob_visitante = np.random.uniform(0.66, 0.75)
+                    prob_empate = np.random.uniform(0.12, 0.18)
+                    prob_local = 1.0 - prob_empate - prob_visitante
+                else:  # Ancla Empate (menos frecuente pero válida)
+                    prob_empate = np.random.uniform(0.66, 0.72)
+                    restante = 1.0 - prob_empate
+                    prob_local = np.random.uniform(0.12, restante - 0.12)
+                    prob_visitante = restante - prob_local
+                    
+                self.logger.debug(f"Generado partido Ancla CSV {partido_idx}: max_prob={max(prob_local, prob_empate, prob_visitante):.3f}")
+            else:
+                # Partidos restantes con distribución normal
+                base = np.random.dirichlet([1.1, 1.0, 1.1])
+                prob_local, prob_empate, prob_visitante = base
                 
         else:
             # Tipos moderados o equilibrados
