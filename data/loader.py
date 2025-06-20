@@ -9,7 +9,17 @@ import numpy as np
 import logging
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
-from logging_setup import get_instrumentor
+
+try:
+    from logging_setup import get_instrumentor
+except ImportError:
+    # Fallback si no está disponible
+    def get_instrumentor():
+        class DummyInstrumentor:
+            def start_timer(self, name): return name
+            def end_timer(self, timer_id, success=True, metrics=None): pass
+            def log_state_change(self, **kwargs): pass
+        return DummyInstrumentor()
 
 
 class EnhancedDataLoader:
@@ -63,67 +73,7 @@ class EnhancedDataLoader:
             })
             
             self.logger.info(f"✅ Datos cargados exitosamente: {len(partidos_validados)} partidos")
-            return partido
-    
-    def _garantizar_anclas_en_csv(self, partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        MÉTODO CRÍTICO: Garantiza que haya al menos 6 Anclas forzando probabilidades altas
-        """
-        self.logger.info("🔒 Garantizando Anclas mínimas en CSV procesado...")
-        
-        # Contar Anclas actuales
-        anclas_actuales = self._contar_anclas(partidos)
-        self.logger.info(f"Anclas encontradas en CSV: {anclas_actuales}/{self.min_anchors}")
-        
-        if anclas_actuales >= self.min_anchors:
-            self.logger.info("✅ CSV ya tiene suficientes Anclas")
-            return partidos
-        
-        # Forzar Anclas en los primeros partidos
-        anclas_necesarias = self.min_anchors - anclas_actuales
-        self.logger.warning(f"⚠️ Forzando {anclas_necesarias} Anclas adicionales")
-        
-        partidos_modificados = []
-        anclas_forzadas = 0
-        
-        for i, partido in enumerate(partidos):
-            partido_modificado = partido.copy()
-            
-            # Si necesitamos más Anclas y este partido no es Ancla, convertirlo
-            max_prob_actual = max(partido['prob_local'], partido['prob_empate'], partido['prob_visitante'])
-            
-            if anclas_forzadas < anclas_necesarias and max_prob_actual < self.anchor_threshold:
-                # Forzar como Ancla
-                tipo_ancla = i % 3  # Rotar tipos
-                
-                if tipo_ancla == 0:  # Ancla Local
-                    partido_modificado['prob_local'] = 0.70
-                    partido_modificado['prob_empate'] = 0.15
-                    partido_modificado['prob_visitante'] = 0.15
-                elif tipo_ancla == 1:  # Ancla Visitante
-                    partido_modificado['prob_local'] = 0.15
-                    partido_modificado['prob_empate'] = 0.15
-                    partido_modificado['prob_visitante'] = 0.70
-                else:  # Ancla Empate
-                    partido_modificado['prob_local'] = 0.17
-                    partido_modificado['prob_empate'] = 0.66
-                    partido_modificado['prob_visitante'] = 0.17
-                
-                anclas_forzadas += 1
-                nueva_max_prob = max(partido_modificado['prob_local'], 
-                                   partido_modificado['prob_empate'], 
-                                   partido_modificado['prob_visitante'])
-                
-                self.logger.info(f"🔒 Forzado partido {i} como Ancla: {partido['home']} vs {partido['away']} "
-                               f"(prob: {max_prob_actual:.3f} → {nueva_max_prob:.3f})")
-            
-            partidos_modificados.append(partido_modificado)
-        
-        # Verificar resultado final
-        anclas_finales = self._contar_anclas(partidos_modificados)
-        self.logger.info(f"✅ Anclas finales garantizadas: {anclas_finales}/{self.min_anchors}")
-        
-        return partidos_modificadoss_validados
+            return partidos_validados
             
         except Exception as e:
             self.instrumentor.end_timer(timer_id, success=False)
@@ -203,12 +153,13 @@ class EnhancedDataLoader:
             
             partidos.append(partido)
             
+            max_prob = max(prob_local, prob_empate, prob_visitante)
             self.instrumentor.log_state_change(
                 component="partido_generado",
                 old_state=f"partido_{idx}",
                 new_state={
                     "tipo": config['tipo'],
-                    "max_prob": max(prob_local, prob_empate, prob_visitante),
+                    "max_prob": max_prob,
                     "es_ancla": max_prob >= self.anchor_threshold
                 }
             )
@@ -502,6 +453,66 @@ class EnhancedDataLoader:
         }
         
         return partido
+    
+    def _garantizar_anclas_en_csv(self, partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        MÉTODO CRÍTICO: Garantiza que haya al menos 6 Anclas forzando probabilidades altas
+        """
+        self.logger.info("🔒 Garantizando Anclas mínimas en CSV procesado...")
+        
+        # Contar Anclas actuales
+        anclas_actuales = self._contar_anclas(partidos)
+        self.logger.info(f"Anclas encontradas en CSV: {anclas_actuales}/{self.min_anchors}")
+        
+        if anclas_actuales >= self.min_anchors:
+            self.logger.info("✅ CSV ya tiene suficientes Anclas")
+            return partidos
+        
+        # Forzar Anclas en los primeros partidos
+        anclas_necesarias = self.min_anchors - anclas_actuales
+        self.logger.warning(f"⚠️ Forzando {anclas_necesarias} Anclas adicionales")
+        
+        partidos_modificados = []
+        anclas_forzadas = 0
+        
+        for i, partido in enumerate(partidos):
+            partido_modificado = partido.copy()
+            
+            # Si necesitamos más Anclas y este partido no es Ancla, convertirlo
+            max_prob_actual = max(partido['prob_local'], partido['prob_empate'], partido['prob_visitante'])
+            
+            if anclas_forzadas < anclas_necesarias and max_prob_actual < self.anchor_threshold:
+                # Forzar como Ancla
+                tipo_ancla = i % 3  # Rotar tipos
+                
+                if tipo_ancla == 0:  # Ancla Local
+                    partido_modificado['prob_local'] = 0.70
+                    partido_modificado['prob_empate'] = 0.15
+                    partido_modificado['prob_visitante'] = 0.15
+                elif tipo_ancla == 1:  # Ancla Visitante
+                    partido_modificado['prob_local'] = 0.15
+                    partido_modificado['prob_empate'] = 0.15
+                    partido_modificado['prob_visitante'] = 0.70
+                else:  # Ancla Empate
+                    partido_modificado['prob_local'] = 0.17
+                    partido_modificado['prob_empate'] = 0.66
+                    partido_modificado['prob_visitante'] = 0.17
+                
+                anclas_forzadas += 1
+                nueva_max_prob = max(partido_modificado['prob_local'], 
+                                   partido_modificado['prob_empate'], 
+                                   partido_modificado['prob_visitante'])
+                
+                self.logger.info(f"🔒 Forzado partido {i} como Ancla: {partido['home']} vs {partido['away']} "
+                               f"(prob: {max_prob_actual:.3f} → {nueva_max_prob:.3f})")
+            
+            partidos_modificados.append(partido_modificado)
+        
+        # Verificar resultado final
+        anclas_finales = self._contar_anclas(partidos_modificados)
+        self.logger.info(f"✅ Anclas finales garantizadas: {anclas_finales}/{self.min_anchors}")
+        
+        return partidos_modificados
 
 
 # Mantener compatibilidad con código existente
