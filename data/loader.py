@@ -70,6 +70,13 @@ class EnhancedDataLoader:
             self.logger.error(f"❌ Error cargando datos: {e}")
             raise
     
+    def generar_datos_ejemplo_mejorados(self) -> List[Dict[str, Any]]:
+        """
+        Método PÚBLICO para generar datos de ejemplo optimizados
+        """
+        self.logger.info("🎲 Generando datos de ejemplo con garantías mejoradas")
+        return self._generar_datos_optimizados()
+    
     def _generar_datos_optimizados(self) -> List[Dict[str, Any]]:
         """
         Genera 14 partidos usando cobertura combinatoria optimizada
@@ -87,40 +94,31 @@ class EnhancedDataLoader:
             ('Bayern Munich', 'Hoffenheim', 'Bundesliga', {'prob_local': 0.70, 'tipo': 'ancla_local_fuerte'}),
             ('PSG', 'Montpellier', 'Ligue 1', {'prob_local': 0.69, 'tipo': 'ancla_local_fuerte'}),
             ('Brighton', 'Liverpool', 'Premier League', {'prob_visitante': 0.67, 'tipo': 'ancla_visitante_fuerte'}),
-            ('Celta', 'Barcelona', 'La Liga', {'prob_visitante': 0.66, 'tipo': 'ancla_visitante_fuerte'}),
+            ('Celtic', 'Rangers', 'Scottish Premiership', {'prob_empate': 0.66, 'tipo': 'empate_estrategico'}),
             
-            # EMPATES ESTRATÉGICOS (3 partidos para balance)
-            ('Athletic Club', 'Real Sociedad', 'La Liga', {'prob_empate': 0.45, 'tipo': 'empate_estrategico'}),
-            ('Valencia', 'Sevilla', 'La Liga', {'prob_empate': 0.42, 'tipo': 'empate_estrategico'}),
-            ('Tottenham', 'Chelsea', 'Premier League', {'prob_empate': 0.40, 'tipo': 'empate_estrategico'}),
+            # DIVISORES EQUILIBRADOS (4 partidos con incertidumbre controlada)
+            ('Atletico Madrid', 'Barcelona', 'La Liga', {'prob_local': 0.41, 'prob_empate': 0.31, 'prob_visitante': 0.28, 'tipo': 'divisor_equilibrado'}),
+            ('Tottenham', 'Arsenal', 'Premier League', {'prob_local': 0.35, 'prob_empate': 0.29, 'prob_visitante': 0.36, 'tipo': 'divisor_equilibrado'}),
+            ('Borussia Dortmund', 'Leipzig', 'Bundesliga', {'prob_local': 0.38, 'prob_empate': 0.27, 'prob_visitante': 0.35, 'tipo': 'divisor_equilibrado'}),
+            ('AC Milan', 'Inter Milan', 'Serie A', {'prob_local': 0.33, 'prob_empate': 0.34, 'prob_visitante': 0.33, 'tipo': 'divisor_equilibrado'}),
             
-            # DIVISORES BALANCEADOS (5 partidos para diversidad)
-            ('Arsenal', 'Newcastle', 'Premier League', {'prob_local': 0.48, 'tipo': 'divisor_equilibrado'}),
-            ('Villarreal', 'Betis', 'La Liga', {'prob_visitante': 0.50, 'tipo': 'divisor_equilibrado'}),
-            ('West Ham', 'Aston Villa', 'Premier League', {'prob_visitante': 0.49, 'tipo': 'divisor_equilibrado'}),
-            ('Crystal Palace', 'Fulham', 'Premier League', {'prob_local': 0.47, 'tipo': 'divisor_equilibrado'}),
-            ('Atletico Madrid', 'Villarreal', 'La Liga', {'prob_empate': 0.35, 'tipo': 'divisor_equilibrado'})
+            # PARTIDOS COMPLEMENTARIOS (4 partidos para completar distribución)
+            ('Sevilla', 'Valencia', 'La Liga', {'prob_local': 0.48, 'prob_empate': 0.28, 'prob_visitante': 0.24, 'tipo': 'local_moderado'}),
+            ('West Ham', 'Everton', 'Premier League', {'prob_local': 0.31, 'prob_empate': 0.26, 'prob_visitante': 0.43, 'tipo': 'visitante_moderado'}),
+            ('Frankfurt', 'Wolfsburg', 'Bundesliga', {'prob_local': 0.36, 'prob_empate': 0.32, 'prob_visitante': 0.32, 'tipo': 'equilibrado_leve'}),
+            ('Napoli', 'Roma', 'Serie A', {'prob_local': 0.44, 'prob_empate': 0.29, 'prob_visitante': 0.27, 'tipo': 'local_moderado'})
         ]
         
         partidos = []
+        
         for idx, (home, away, liga, config) in enumerate(configuraciones_partidos):
             prob_local, prob_empate, prob_visitante = self._calcular_probabilidades_optimizadas(config, idx)
             
-            # Validar que realmente es Ancla si está diseñado como tal
-            max_prob = max(prob_local, prob_empate, prob_visitante)
-            if 'ancla' in config['tipo'] and max_prob < self.anchor_threshold:
-                self.logger.warning(f"⚠️ Partido {idx+1} diseñado como Ancla pero prob_max={max_prob:.3f} < {self.anchor_threshold}")
-                # Forzar que sea Ancla real
-                if 'local' in config['tipo']:
-                    prob_local = max(0.68, prob_local)
-                elif 'visitante' in config['tipo']:
-                    prob_visitante = max(0.68, prob_visitante)
-                
-                # Re-normalizar
-                total = prob_local + prob_empate + prob_visitante
-                prob_local /= total
-                prob_empate /= total
-                prob_visitante /= total
+            # Garantizar precisión matemática
+            total = prob_local + prob_empate + prob_visitante
+            prob_local /= total
+            prob_empate /= total
+            prob_visitante /= total
             
             partido = {
                 'id': idx,
@@ -130,6 +128,8 @@ class EnhancedDataLoader:
                 'prob_local': prob_local,
                 'prob_empate': prob_empate,
                 'prob_visitante': prob_visitante,
+                
+                # Metadatos adicionales
                 'forma_diferencia': self._generar_factor_contextual('forma', config['tipo']),
                 'lesiones_impact': self._generar_factor_contextual('lesiones', config['tipo']),
                 'es_final': 'final' in liga.lower(),
@@ -187,167 +187,127 @@ class EnhancedDataLoader:
         elif 'divisor_equilibrado' in tipo:
             if 'prob_local' in config:
                 prob_local = config['prob_local']
-                prob_empate = np.random.uniform(0.25, 0.35)
-                prob_visitante = 1.0 - prob_local - prob_empate
-            elif 'prob_visitante' in config:
+                prob_empate = config['prob_empate']
                 prob_visitante = config['prob_visitante']
-                prob_empate = np.random.uniform(0.25, 0.35)
+            else:
+                # Generar probabilidades balanceadas
+                base = np.random.dirichlet([1.2, 1.0, 1.1])  # Ligeramente sesgado hacia L y V
+                prob_local, prob_empate, prob_visitante = base
+                
+        else:
+            # Tipos moderados o equilibrados
+            if tipo == 'local_moderado':
+                prob_local = np.random.uniform(0.44, 0.52)
+                prob_empate = np.random.uniform(0.26, 0.32)
+                prob_visitante = 1.0 - prob_local - prob_empate
+            elif tipo == 'visitante_moderado':
+                prob_visitante = np.random.uniform(0.41, 0.48)
+                prob_empate = np.random.uniform(0.24, 0.30)
                 prob_local = 1.0 - prob_empate - prob_visitante
             else:
-                prob_empate = config.get('prob_empate', 0.33)
-                restante = 1.0 - prob_empate
-                prob_local = restante / 2
-                prob_visitante = restante / 2
-        else:
-            # Fallback a distribución histórica
-            probs = np.random.dirichlet([38, 29, 33])
-            prob_local, prob_empate, prob_visitante = probs[0], probs[1], probs[2]
+                # Equilibrado por defecto
+                base = np.random.dirichlet([1.1, 1.0, 1.1])
+                prob_local, prob_empate, prob_visitante = base
         
-        # Normalizar y validar
-        probs_array = np.array([prob_local, prob_empate, prob_visitante])
-        probs_array = np.maximum(probs_array, 0.05)  # Mínimo 5%
-        probs_array = probs_array / probs_array.sum()  # Normalizar
-        
-        return float(probs_array[0]), float(probs_array[1]), float(probs_array[2])
+        return float(prob_local), float(prob_empate), float(prob_visitante)
     
     def _generar_factor_contextual(self, factor_tipo: str, partido_tipo: str) -> float:
         """
-        Genera factores contextuales realistas según tipo de partido
+        Genera factores contextuales basados en tipo de partido
         """
         if factor_tipo == 'forma':
-            if 'ancla_local' in partido_tipo:
-                return np.random.uniform(0.5, 1.5)  # Forma favorable al local
-            elif 'ancla_visitante' in partido_tipo:
-                return np.random.uniform(-1.5, -0.5)  # Forma favorable al visitante
+            if 'ancla' in partido_tipo:
+                return np.random.normal(0.8, 0.2)  # Forma fuerte para anclas
+            elif 'equilibrado' in partido_tipo:
+                return np.random.normal(0.0, 0.3)  # Forma neutral
             else:
-                return np.random.normal(0, 0.5)
+                return np.random.normal(0.2, 0.4)  # Forma variable
                 
         elif factor_tipo == 'lesiones':
             if 'ancla' in partido_tipo:
-                return np.random.uniform(-0.5, 0.5)  # Pocas lesiones en favorito
+                return np.random.normal(-0.1, 0.2)  # Pocas lesiones
             else:
-                return np.random.normal(0, 0.3)
+                return np.random.normal(0.0, 0.3)  # Impact neutral
         
         return 0.0
     
     def _garantizar_distribucion_optima(self, partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Garantiza que la distribución global cumpla exactamente con 38%L, 29%E, 33%V
+        Garantiza que la distribución global respete los rangos históricos
         """
-        timer_id = self.instrumentor.start_timer("garantizar_distribucion")
-        
         # Calcular distribución actual
         resultados_actuales = [self._resultado_mas_probable(p) for p in partidos]
-        dist_actual = {
-            "L": resultados_actuales.count("L") / 14,
-            "E": resultados_actuales.count("E") / 14,
-            "V": resultados_actuales.count("V") / 14
-        }
+        counts = {"L": resultados_actuales.count("L"), 
+                  "E": resultados_actuales.count("E"), 
+                  "V": resultados_actuales.count("V")}
         
-        self.logger.info(f"📊 Distribución actual: L={dist_actual['L']:.1%}, E={dist_actual['E']:.1%}, V={dist_actual['V']:.1%}")
+        total = len(partidos)
+        dist_actual = {k: v/total for k, v in counts.items()}
         
-        # Calcular targets exactos para 14 partidos
-        target_counts = {
-            "L": round(14 * self.target_distribution["L"]),  # 5
-            "E": round(14 * self.target_distribution["E"]),  # 4
-            "V": round(14 * self.target_distribution["V"])   # 5
-        }
+        self.logger.debug(f"Distribución actual: L={dist_actual['L']:.3f}, E={dist_actual['E']:.3f}, V={dist_actual['V']:.3f}")
         
-        # Ajuste fino: asegurar que sumen 14
-        total_target = sum(target_counts.values())
-        if total_target != 14:
-            # Ajustar el que esté más cerca
-            diff = 14 - total_target
-            if diff > 0:
-                target_counts["L"] += diff  # Favorecer locales
-            else:
-                target_counts["E"] += diff
+        # Verificar si está dentro de rangos aceptables
+        rangos_ok = (0.35 <= dist_actual['L'] <= 0.41 and 
+                     0.25 <= dist_actual['E'] <= 0.33 and 
+                     0.30 <= dist_actual['V'] <= 0.36)
         
-        self.logger.info(f"🎯 Targets objetivo: L={target_counts['L']}, E={target_counts['E']}, V={target_counts['V']}")
+        if rangos_ok:
+            self.logger.info("✅ Distribución ya está dentro de rangos óptimos")
+            return partidos
         
-        # Contar resultados actuales
-        actual_counts = {
-            "L": resultados_actuales.count("L"),
-            "E": resultados_actuales.count("E"), 
-            "V": resultados_actuales.count("V")
-        }
-        
-        # Identificar qué ajustar (solo tocar NO-Anclas)
-        partidos_ajustados = partidos.copy()
-        anclas_indices = set()
-        
-        for i, partido in enumerate(partidos):
-            max_prob = max(partido['prob_local'], partido['prob_empate'], partido['prob_visitante'])
-            if max_prob >= self.anchor_threshold:
-                anclas_indices.add(i)
-        
-        modificables = [i for i in range(14) if i not in anclas_indices]
-        self.logger.info(f"🔒 Anclas protegidas: {len(anclas_indices)}, Modificables: {len(modificables)}")
-        
-        # Aplicar ajustes solo en modificables
-        for resultado, target_count in target_counts.items():
-            current_count = actual_counts[resultado]
-            diff = target_count - current_count
-            
-            if diff > 0:  # Necesitamos más de este resultado
-                # Buscar candidatos modificables que NO sean de este tipo
-                candidatos = [i for i in modificables 
-                             if self._resultado_mas_probable(partidos_ajustados[i]) != resultado]
-                
-                # Ordenar por qué tan fácil es cambiar
-                candidatos.sort(key=lambda i: -max(partidos_ajustados[i]['prob_local'], 
-                                                 partidos_ajustados[i]['prob_empate'], 
-                                                 partidos_ajustados[i]['prob_visitante']))
-                
-                cambios_realizados = 0
-                for i in candidatos[:diff]:
-                    if cambios_realizados >= diff:
-                        break
-                    
-                    # Modificar probabilidades para favorecer el resultado objetivo
-                    self._ajustar_probabilidades_hacia_resultado(partidos_ajustados[i], resultado)
-                    cambios_realizados += 1
-                    
-                    self.instrumentor.log_state_change(
-                        component="ajuste_distribucion",
-                        old_state=f"partido_{i}_original",
-                        new_state=f"partido_{i}_ajustado_hacia_{resultado}"
-                    )
-        
-        self.instrumentor.end_timer(timer_id, success=True)
-        return partidos_ajustados
+        # Aplicar ajustes matemáticos si es necesario
+        self.logger.warning("⚠️ Ajustando distribución para cumplir rangos históricos")
+        return self._ajustar_distribucion_matematica(partidos, dist_actual)
     
-    def _ajustar_probabilidades_hacia_resultado(self, partido: Dict[str, Any], resultado_objetivo: str):
+    def _ajustar_distribucion_matematica(self, partidos: List[Dict[str, Any]], dist_actual: Dict[str, float]) -> List[Dict[str, Any]]:
         """
-        Ajusta las probabilidades de un partido para favorecer un resultado específico
+        Ajusta matemáticamente las probabilidades para corregir distribución
         """
-        if resultado_objetivo == "L":
-            partido['prob_local'] = max(0.50, partido['prob_local'] + 0.15)
-            partido['prob_empate'] *= 0.8
-            partido['prob_visitante'] *= 0.8
-        elif resultado_objetivo == "E":
-            partido['prob_empate'] = max(0.45, partido['prob_empate'] + 0.15)
-            partido['prob_local'] *= 0.8
-            partido['prob_visitante'] *= 0.8
-        elif resultado_objetivo == "V":
-            partido['prob_visitante'] = max(0.50, partido['prob_visitante'] + 0.15)
-            partido['prob_local'] *= 0.8
-            partido['prob_empate'] *= 0.8
+        partidos_ajustados = []
         
-        # Re-normalizar
-        total = partido['prob_local'] + partido['prob_empate'] + partido['prob_visitante']
-        partido['prob_local'] /= total
-        partido['prob_empate'] /= total
-        partido['prob_visitante'] /= total
+        for partido in partidos:
+            resultado_actual = self._resultado_mas_probable(partido)
+            
+            # Aplicar ajuste sutil según la desviación
+            if dist_actual['L'] > 0.41 and resultado_actual == 'L':
+                # Demasiados locales, reducir probabilidad local ligeramente
+                ajuste = 0.95
+                partido['prob_local'] *= ajuste
+                partido['prob_empate'] *= 1.02
+                partido['prob_visitante'] *= 1.03
+                
+            elif dist_actual['E'] > 0.33 and resultado_actual == 'E':
+                # Demasiados empates, redistribuir
+                ajuste = 0.93
+                partido['prob_empate'] *= ajuste
+                partido['prob_local'] *= 1.035
+                partido['prob_visitante'] *= 1.035
+                
+            elif dist_actual['V'] > 0.36 and resultado_actual == 'V':
+                # Demasiados visitantes, reducir
+                ajuste = 0.94
+                partido['prob_visitante'] *= ajuste
+                partido['prob_local'] *= 1.03
+                partido['prob_empate'] *= 1.03
+            
+            # Renormalizar
+            total = partido['prob_local'] + partido['prob_empate'] + partido['prob_visitante']
+            partido['prob_local'] /= total
+            partido['prob_empate'] /= total
+            partido['prob_visitante'] /= total
+            
+            partidos_ajustados.append(partido)
+        
+        return partidos_ajustados
     
     def _validar_cobertura_anclas(self, partidos: List[Dict[str, Any]]):
         """
-        Valida que hay suficientes partidos Ancla para estabilidad
+        Valida que se cumple la cobertura mínima de partidos Ancla
         """
         anclas_encontradas = self._contar_anclas(partidos)
         
         if anclas_encontradas < self.min_anchors:
-            error_msg = f"❌ CRÍTICO: Solo {anclas_encontradas} Anclas encontradas, mínimo {self.min_anchors}"
+            error_msg = f"FALLO CRÍTICO: Solo {anclas_encontradas} Anclas encontradas, se requieren mínimo {self.min_anchors}"
             self.logger.error(error_msg)
             raise ValueError(error_msg)
         

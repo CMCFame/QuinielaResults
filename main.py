@@ -198,7 +198,7 @@ class EnhancedProgolOptimizer:
             
             # 1.1: Cargar o generar datos
             if archivo_datos:
-                partidos = self.data_loader.cargar_partidos_desde_archivo(archivo_datos)
+                partidos = self.data_loader.cargar_datos(archivo_datos)
             else:
                 partidos = self.data_loader.generar_datos_ejemplo_mejorados()
             
