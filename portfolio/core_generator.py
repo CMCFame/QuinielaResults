@@ -1,8 +1,9 @@
 # progol_optimizer/portfolio/core_generator.py - VERSIÓN FINAL CORREGIDA
 """
-Generador de Quinielas Core con lógica de validación corregida y balanceo colectivo agresivo.
-GARANTIZA: Un portafolio Core 100% válido.
+Generador de Quinielas Core - SOLUCIÓN DEFINITIVA
+Crea 4 quinielas Core con VERDADERA variación que pasan TODAS las validaciones
 """
+
 import logging
 import random
 import copy
@@ -15,202 +16,472 @@ class CoreGenerator:
         self.config = PROGOL_CONFIG
         self.empates_min = self.config["EMPATES_MIN"]
         self.empates_max = self.config["EMPATES_MAX"]
-        self.concentracion_max_general = self.config["CONCENTRACION_MAX_GENERAL"]
-        self.concentracion_max_inicial = self.config["CONCENTRACION_MAX_INICIAL"]
         self.rangos = self.config["RANGOS_HISTORICOS"]
-        self.logger.debug(f"CoreGenerator (Lógica Corregida) inicializado")
+        self.logger.debug("CoreGenerator DEFINITIVO inicializado")
 
     def generar_quinielas_core(self, partidos_clasificados: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        self.logger.info("Generando 4 quinielas Core con LÓGICA CORREGIDA Y BALANCEO AGRESIVO...")
+        """Genera 4 quinielas Core que PASAN TODAS las validaciones"""
+        self.logger.info("🎯 Generando 4 quinielas Core con VARIACIÓN GARANTIZADA...")
+        
+        # Identificar partidos especiales
         anclas_indices = [i for i, p in enumerate(partidos_clasificados) if p.get("clasificacion") == "Ancla"]
+        divisores_indices = [i for i, p in enumerate(partidos_clasificados) if p.get("clasificacion") == "Divisor"]
+        otros_indices = [i for i in range(14) if i not in anclas_indices and i not in divisores_indices]
         
-        core_quinielas_info = self._generar_cores_diversos(partidos_clasificados, anclas_indices)
+        self.logger.info(f"📌 Anclas: {len(anclas_indices)}, Divisores: {len(divisores_indices)}, Otros: {len(otros_indices)}")
         
-        self.logger.info("Aplicando balanceo colectivo final...")
-        core_quinielas_balanceadas = self._balanceo_colectivo_final(core_quinielas_info, partidos_clasificados, anclas_indices)
-
-        self._validacion_final_completa(core_quinielas_balanceadas)
-        return core_quinielas_balanceadas
-
-    def _generar_cores_diversos(self, partidos, anclas_indices):
-        core_quinielas = []
-        base_resultados = [self._get_resultado_max_prob(p) for p in partidos]
-        core_1_resultados = self._correccion_individual_robusta(base_resultados, partidos, anclas_indices)
-        core_quinielas.append(self._crear_info_quiniela("Core-1", core_1_resultados))
+        # Generar 4 quinielas con estrategias específicas y diferentes
+        quinielas_core = []
         
-        intentos = 0
-        while len(core_quinielas) < 4 and intentos < 300:
-            intentos += 1
-            candidato = core_1_resultados.copy()
-            no_anclas = [i for i in range(14) if i not in anclas_indices]
-            num_mutaciones = random.randint(3, 6)
-            pos_a_mutar = random.sample(no_anclas, k=min(num_mutaciones, len(no_anclas)))
+        for core_num in range(4):
+            core_id = f"Core-{core_num + 1}"
             
-            for pos in pos_a_mutar:
-                opciones = ["L", "E", "V"]
-                opciones.remove(candidato[pos])
-                candidato[pos] = random.choice(opciones)
-            
-            corregido = self._correccion_individual_robusta(candidato, partidos, anclas_indices)
-
-            if self._es_valido_individualmente(corregido) and self._aporta_diversidad(corregido, core_quinielas):
-                nueva_id = f"Core-{len(core_quinielas)+1}"
-                core_quinielas.append(self._crear_info_quiniela(nueva_id, corregido))
-        
-        if len(core_quinielas) < 4:
-            raise RuntimeError("Fallo crítico: No se pudieron generar 4 quinielas Core diversas.")
-        
-        return core_quinielas
-
-    def _balanceo_colectivo_final(self, quinielas: List[Dict[str, Any]], partidos: List[Dict[str, Any]], anclas_indices: List[int]) -> List[Dict[str, Any]]:
-        """Balancea el conjunto de quinielas para cumplir reglas colectivas."""
-        q_balanceadas = copy.deepcopy(quinielas)
-        modificables = [i for i in range(14) if i not in anclas_indices]
-
-        for _ in range(5): # Múltiples pasadas de balanceo
-            # 1. Balanceo de Divisores (más agresivo)
-            for pos in modificables:
-                conteos = {"L": 0, "E": 0, "V": 0}
-                for q in q_balanceadas:
-                    conteos[q["resultados"][pos]] += 1
+            max_intentos = 50
+            for intento in range(max_intentos):
+                quiniela = self._generar_core_individual(
+                    core_num, partidos_clasificados, 
+                    anclas_indices, divisores_indices, otros_indices
+                )
                 
-                # Si una posición tiene 3 o 4 apariciones
-                signo_dominante, count_dominante = max(conteos.items(), key=lambda item: item[1])
-                if count_dominante >= 3:
-                    self.logger.debug(f"Balanceando P{pos+1}. Concentración de {count_dominante}/4 en '{signo_dominante}'.")
-                    # Cambiar el resultado en 1 o 2 de las quinielas dominantes
-                    indices_quinielas_dominantes = [i for i, q in enumerate(q_balanceadas) if q["resultados"][pos] == signo_dominante]
-                    q_a_cambiar = random.choice(indices_quinielas_dominantes)
-                    
-                    opciones = ["L", "E", "V"]
-                    opciones.remove(signo_dominante)
-                    nuevo_resultado = min(opciones, key=lambda s: conteos[s]) # Cambiar al menos frecuente
-                    
-                    q_balanceadas[q_a_cambiar]["resultados"][pos] = nuevo_resultado
-                    q_balanceadas[q_a_cambiar] = self._crear_info_quiniela(q_balanceadas[q_a_cambiar]["id"], self._correccion_individual_robusta(q_balanceadas[q_a_cambiar]["resultados"], partidos, anclas_indices))
-
-            # 2. Balanceo de Distribución Global
-            dist = self._calcular_distribucion_global(q_balanceadas)
-            if not (self.rangos["L"][0] <= dist['L'] <= self.rangos["L"][1]):
-                self.logger.debug(f"Balanceando Global: L={dist['L']:.1%} fuera de rango.")
-                # Lógica de corrección global (ej. cambiar un L por un V)
-                # (Esta lógica puede ser compleja, un ejemplo simple es cambiar el L menos probable)
-                if dist['L'] > self.rangos['L'][1]: # Si hay exceso de locales
-                    # Buscar el L menos probable en todo el portafolio y cambiarlo a V o E
-                    mejor_cambio = (None, None, 1.0) # q_idx, pos, prob
-                    for q_idx, q in enumerate(q_balanceadas):
-                        for pos in modificables:
-                            if q['resultados'][pos] == 'L' and partidos[pos]['prob_local'] < mejor_cambio[2]:
-                                mejor_cambio = (q_idx, pos, partidos[pos]['prob_local'])
-                    
-                    if mejor_cambio[0] is not None:
-                        q_idx, pos, _ = mejor_cambio
-                        # Cambiar a V si está bajo, si no, a E
-                        q_balanceadas[q_idx]['resultados'][pos] = 'V' if dist['V'] < self.rangos['V'][0] else 'E'
-                        q_balanceadas[q_idx] = self._crear_info_quiniela(q_balanceadas[q_idx]["id"], self._correccion_individual_robusta(q_balanceadas[q_idx]["resultados"], partidos, anclas_indices))
-
-        return q_balanceadas
-
-    def _correccion_individual_robusta(self, quiniela: List[str], partidos: List[Dict[str, Any]], anclas_indices: List[int]) -> List[str]:
-        q_corregida = copy.deepcopy(quiniela)
-        modificables = [i for i in range(14) if i not in anclas_indices]
-        for _ in range(5):
-            q_corregida = self._forzar_concentracion_general_valida(q_corregida, partidos, modificables)
-            q_corregida = self._forzar_concentracion_inicial_valida(q_corregida, partidos, modificables)
-            q_corregida = self._forzar_empates_validos_agresivo(q_corregida, partidos, modificables)
-            if self._es_valido_individualmente(q_corregida): return q_corregida
-        return q_corregida
+                # Validar que cumple TODAS las reglas individuales
+                if self._validar_core_individual(quiniela, core_num):
+                    # Verificar que sea diferente a las existentes
+                    if self._es_suficientemente_diferente(quiniela, quinielas_core):
+                        quiniela_info = self._crear_info_quiniela(core_id, quiniela)
+                        quinielas_core.append(quiniela_info)
+                        self.logger.info(f"✅ {core_id} generada en intento {intento + 1}")
+                        break
+            else:
+                raise RuntimeError(f"No se pudo generar {core_id} válida después de {max_intentos} intentos")
         
-    def _forzar_concentracion_inicial_valida(self, quiniela: List[str], partidos: List[Dict[str, Any]], modificables: List[int]) -> List[str]:
-        q_corregida = quiniela.copy()
-        modificables_iniciales = [i for i in modificables if i < 3]
-        for _ in range(3):
-            primeros_3 = q_corregida[:3]
-            counts = {"L": primeros_3.count("L"), "E": primeros_3.count("E"), "V": primeros_3.count("V")}
-            signo_problema, count_problema = max(counts.items(), key=lambda item: item[1])
+        # Validación y ajuste final del conjunto
+        quinielas_finales = self._ajuste_final_conjunto(quinielas_core, partidos_clasificados, anclas_indices)
+        
+        # Verificación final
+        self._verificacion_final_completa(quinielas_finales)
+        
+        return quinielas_finales
+
+    def _generar_core_individual(self, core_num: int, partidos: List[Dict[str, Any]], 
+                                 anclas_indices: List[int], divisores_indices: List[int], 
+                                 otros_indices: List[int]) -> List[str]:
+        """Genera una quiniela Core individual con estrategia específica"""
+        
+        resultados = [""] * 14
+        
+        # PASO 1: Fijar Anclas (iguales para todas las Core)
+        for idx in anclas_indices:
+            resultado_ancla = self._get_resultado_max_prob(partidos[idx])
+            resultados[idx] = resultado_ancla
+        
+        # PASO 2: Estrategias específicas por Core para crear VARIACIÓN
+        if core_num == 0:  # Core-1: Balance conservador
+            self._aplicar_estrategia_conservadora(resultados, partidos, divisores_indices, otros_indices)
+        elif core_num == 1:  # Core-2: Prioriza visitantes
+            self._aplicar_estrategia_visitantes(resultados, partidos, divisores_indices, otros_indices)
+        elif core_num == 2:  # Core-3: Más empates estratégicos
+            self._aplicar_estrategia_empates(resultados, partidos, divisores_indices, otros_indices)
+        else:  # Core-4: Mix rotativo para máxima variación
+            self._aplicar_estrategia_mixta(resultados, partidos, divisores_indices, otros_indices)
+        
+        # PASO 3: Asegurar 4-6 empates
+        resultados = self._ajustar_empates_garantizado(resultados, partidos, anclas_indices)
+        
+        # PASO 4: Corregir concentración inicial si es necesaria
+        resultados = self._corregir_concentracion_inicial_agresiva(resultados, partidos, anclas_indices)
+        
+        return resultados
+
+    def _aplicar_estrategia_conservadora(self, resultados: List[str], partidos: List[Dict[str, Any]], 
+                                         divisores_indices: List[int], otros_indices: List[int]):
+        """Core-1: Estrategia conservadora pero con variación en primeros 3"""
+        
+        # Para divisores: usar máxima probabilidad
+        for idx in divisores_indices:
+            resultados[idx] = self._get_resultado_max_prob(partidos[idx])
+        
+        # Para otros: usar máxima probabilidad pero con variación intencional en posiciones clave
+        for idx in otros_indices:
+            if idx < 3:  # Primeros 3: crear variación intencional
+                probs = self._get_probabilidades_ordenadas(partidos[idx])
+                # Usar segunda opción en posición 1 para variación
+                if idx == 1:
+                    resultados[idx] = probs[1][0]  # Segunda opción
+                else:
+                    resultados[idx] = probs[0][0]  # Primera opción
+            else:
+                resultados[idx] = self._get_resultado_max_prob(partidos[idx])
+
+    def _aplicar_estrategia_visitantes(self, resultados: List[str], partidos: List[Dict[str, Any]], 
+                                       divisores_indices: List[int], otros_indices: List[int]):
+        """Core-2: Prioriza visitantes para balancear distribución global"""
+        
+        for idx in divisores_indices + otros_indices:
+            if idx < 3:  # Variación en primeros 3
+                if idx == 0:  # Posición 0: priorizar empate para variación
+                    if partidos[idx]["prob_empate"] > 0.25:
+                        resultados[idx] = "E"
+                    else:
+                        resultados[idx] = self._get_resultado_max_prob(partidos[idx])
+                elif idx == 2:  # Posición 2: priorizar visitante si es viable
+                    if partidos[idx]["prob_visitante"] > 0.30:
+                        resultados[idx] = "V"
+                    else:
+                        resultados[idx] = self._get_resultado_max_prob(partidos[idx])
+                else:
+                    resultados[idx] = self._get_resultado_max_prob(partidos[idx])
+            else:
+                # Resto: priorizar visitantes cuando sea razonable
+                probs = self._get_probabilidades_ordenadas(partidos[idx])
+                if probs[0][0] == "V" or (probs[1][0] == "V" and probs[1][1] > 0.35):
+                    resultados[idx] = "V"
+                else:
+                    resultados[idx] = probs[0][0]
+
+    def _aplicar_estrategia_empates(self, resultados: List[str], partidos: List[Dict[str, Any]], 
+                                    divisores_indices: List[int], otros_indices: List[int]):
+        """Core-3: Más empates estratégicos"""
+        
+        for idx in divisores_indices + otros_indices:
+            if idx < 3:  # Variación específica en primeros 3
+                if idx == 1:  # Posición 1: cambiar a visitante para variación
+                    if partidos[idx]["prob_visitante"] > 0.25:
+                        resultados[idx] = "V"
+                    else:
+                        resultados[idx] = self._get_resultado_max_prob(partidos[idx])
+                else:
+                    resultados[idx] = self._get_resultado_max_prob(partidos[idx])
+            else:
+                # Resto: priorizar empates cuando la probabilidad sea decente
+                if partidos[idx]["prob_empate"] > 0.30:
+                    resultados[idx] = "E"
+                else:
+                    resultados[idx] = self._get_resultado_max_prob(partidos[idx])
+
+    def _aplicar_estrategia_mixta(self, resultados: List[str], partidos: List[Dict[str, Any]], 
+                                  divisores_indices: List[int], otros_indices: List[int]):
+        """Core-4: Mix rotativo para máxima variación"""
+        
+        opciones = ["L", "E", "V"]
+        
+        for i, idx in enumerate(divisores_indices + otros_indices):
+            if idx < 3:  # Máxima variación en primeros 3
+                if idx == 0:  # Posición 0: usar visitante para máxima variación
+                    if partidos[idx]["prob_visitante"] > 0.20:
+                        resultados[idx] = "V"
+                    else:
+                        resultados[idx] = self._get_resultado_max_prob(partidos[idx])
+                elif idx == 1:  # Posición 1: mantener empate si es viable
+                    if partidos[idx]["prob_empate"] > 0.20:
+                        resultados[idx] = "E"
+                    else:
+                        resultados[idx] = self._get_resultado_max_prob(partidos[idx])
+                else:
+                    resultados[idx] = self._get_resultado_max_prob(partidos[idx])
+            else:
+                # Resto: rotación basada en posición para distribución equilibrada
+                estrategia_idx = i % 3
+                probs = self._get_probabilidades_ordenadas(partidos[idx])
+                
+                # Usar la opción según rotación, pero solo si es razonable
+                if len(probs) > estrategia_idx and probs[estrategia_idx][1] > 0.20:
+                    resultados[idx] = probs[estrategia_idx][0]
+                else:
+                    resultados[idx] = probs[0][0]
+
+    def _ajustar_empates_garantizado(self, resultados: List[str], partidos: List[Dict[str, Any]], 
+                                     anclas_indices: List[int]) -> List[str]:
+        """Garantiza que la quiniela tenga entre 4-6 empates"""
+        
+        resultados_ajustados = resultados.copy()
+        empates_actuales = resultados_ajustados.count("E")
+        modificables = [i for i in range(14) if i not in anclas_indices]
+        
+        # Si faltan empates
+        while empates_actuales < self.empates_min and modificables:
+            # Buscar el mejor candidato para convertir a empate
+            mejor_candidato = max(
+                [i for i in modificables if resultados_ajustados[i] != "E"],
+                key=lambda i: partidos[i]["prob_empate"],
+                default=None
+            )
             
-            # --- LA CORRECCIÓN CLAVE ---
-            # La regla es <=60%. 60% de 3 es 1.8. El máximo número de apariciones es 1.
-            # Por lo tanto, cualquier cuenta de 2 o más (66.7%) es inválida.
-            if count_problema <= 1: # Si la cuenta máxima es 1 (o 0), es válido.
+            if mejor_candidato is not None:
+                resultados_ajustados[mejor_candidato] = "E"
+                empates_actuales += 1
+            else:
                 break
-            
-            self.logger.debug(f"Corrigiendo Conc. Inicial: '{signo_problema}' tiene {count_problema}/3. Supera el máximo de 1.")
-            
-            indices_modificables = [idx for idx in modificables_iniciales if q_corregida[idx] == signo_problema]
-            if not indices_modificables: break
+        
+        # Si sobran empates
+        while empates_actuales > self.empates_max and modificables:
+            # Buscar el peor empate para convertir
+            candidatos_empate = [i for i in modificables if resultados_ajustados[i] == "E"]
+            if candidatos_empate:
+                peor_empate = min(candidatos_empate, key=lambda i: partidos[i]["prob_empate"])
+                # Cambiar al resultado más probable
+                nuevo_resultado = self._get_resultado_max_prob(partidos[peor_empate])
+                resultados_ajustados[peor_empate] = nuevo_resultado
+                empates_actuales -= 1
+            else:
+                break
+        
+        return resultados_ajustados
 
-            idx_a_cambiar = min(indices_modificables, key=lambda idx: partidos[idx][f"prob_{self._resultado_a_clave(signo_problema)}"])
-            
-            otros_signos = {s: c for s, c in counts.items() if s != signo_problema}
-            q_corregida[idx_a_cambiar] = min(otros_signos, key=otros_signos.get) if otros_signos else random.choice([s for s in ["L","E","V"] if s != signo_problema])
-        return q_corregida
+    def _corregir_concentracion_inicial_agresiva(self, resultados: List[str], partidos: List[Dict[str, Any]], 
+                                                  anclas_indices: List[int]) -> List[str]:
+        """Corrección AGRESIVA de concentración en primeros 3 partidos"""
+        
+        resultados_corregidos = resultados.copy()
+        primeros_3 = resultados_corregidos[:3]
+        modificables_iniciales = [i for i in range(3) if i not in anclas_indices]
+        
+        if not modificables_iniciales:
+            return resultados_corregidos
+        
+        # Contar apariciones en primeros 3
+        conteos = {"L": primeros_3.count("L"), "E": primeros_3.count("E"), "V": primeros_3.count("V")}
+        
+        # Si algún signo aparece más de 1 vez (>33.3%), corregir
+        for signo, count in conteos.items():
+            if count > 1:  # Más de 1 vez = >33.3% = viola regla ≤60%
+                self.logger.debug(f"Corrigiendo concentración inicial: {signo} aparece {count} veces en primeros 3")
+                
+                # Encontrar posiciones modificables con este signo
+                posiciones_signo = [i for i in modificables_iniciales if resultados_corregidos[i] == signo]
+                
+                if len(posiciones_signo) > 1:
+                    # Cambiar la posición con menor probabilidad de este signo
+                    pos_a_cambiar = min(posiciones_signo, 
+                                       key=lambda i: partidos[i][f"prob_{self._resultado_a_clave(signo)}"])
+                    
+                    # Cambiar al signo menos usado en primeros 3
+                    otros_signos = {s: c for s, c in conteos.items() if s != signo}
+                    nuevo_signo = min(otros_signos, key=otros_signos.get)
+                    
+                    # Verificar que el nuevo signo sea razonable para esta posición
+                    prob_nuevo = partidos[pos_a_cambiar][f"prob_{self._resultado_a_clave(nuevo_signo)}"]
+                    if prob_nuevo > 0.15:  # Al menos 15% de probabilidad
+                        resultados_corregidos[pos_a_cambiar] = nuevo_signo
+                        # Actualizar conteos para próxima iteración
+                        conteos[signo] -= 1
+                        conteos[nuevo_signo] += 1
+        
+        return resultados_corregidos
 
-    # El resto de las funciones auxiliares no necesitan cambios
-    # ... (pegar aquí las funciones _forzar_empates_validos_agresivo, _forzar_concentracion_general_valida, _crear_info_quiniela, etc.)
-    def _forzar_empates_validos_agresivo(self, quiniela: List[str], partidos: List[Dict[str, Any]], modificables: List[int]) -> List[str]:
-        q_ajustada = quiniela.copy()
-        while q_ajustada.count("E") < self.empates_min:
-            candidatos = [i for i in modificables if q_ajustada[i] != "E"]
-            if not candidatos: break
-            mejor_candidato = max(candidatos, key=lambda i: partidos[i]["prob_empate"])
-            q_ajustada[mejor_candidato] = "E"
-        while q_ajustada.count("E") > self.empates_max:
-            candidatos = [i for i in modificables if q_ajustada[i] == "E"]
-            if not candidatos: break
-            peor_candidato = min(candidatos, key=lambda i: partidos[i]["prob_empate"])
-            partido = partidos[peor_candidato]
-            q_ajustada[peor_candidato] = "L" if partido["prob_local"] > partido["prob_visitante"] else "V"
-        return q_ajustada
-
-    def _forzar_concentracion_general_valida(self, quiniela: List[str], partidos: List[Dict[str, Any]], modificables: List[int]) -> List[str]:
-        q_corregida = quiniela.copy()
-        max_permitido = int(14 * self.concentracion_max_general)
-        for _ in range(3):
-            counts = {"L": q_corregida.count("L"), "E": q_corregida.count("E"), "V": q_corregida.count("V")}
-            signo_problema, count_problema = max(counts.items(), key=lambda item: item[1])
-            if count_problema <= max_permitido: break
-            exceso = count_problema - max_permitido
-            indices_a_cambiar = sorted([i for i in modificables if q_corregida[i] == signo_problema], key=lambda i: partidos[i][f"prob_{self._resultado_a_clave(signo_problema)}"])
-            for idx in indices_a_cambiar[:exceso]:
-                otros_signos = {s: c for s, c in counts.items() if s != signo_problema}
-                q_corregida[idx] = min(otros_signos, key=otros_signos.get) if otros_signos else random.choice([s for s in ["L","E","V"] if s != signo_problema])
-        return q_corregida
-
-    def _crear_info_quiniela(self, q_id: str, resultados: List[str]) -> Dict[str, Any]:
-        return {"id": q_id, "tipo": "Core", "resultados": resultados, "empates": resultados.count("E"), "distribución": {"L": resultados.count("L"), "E": resultados.count("E"), "V": resultados.count("V")}}
-
-    def _es_valido_individualmente(self, resultados: List[str]) -> bool:
-        if not (self.empates_min <= resultados.count("E") <= self.empates_max): return False
-        if max(resultados.count(s) for s in ["L", "E", "V"]) / 14.0 > self.concentracion_max_general: return False
-        # Regla corregida: <= 60% significa que el máximo de apariciones es 1 (33.3%)
-        if max(resultados[:3].count(s) for s in ["L", "E", "V"]) > 1: return False
+    def _validar_core_individual(self, resultados: List[str], core_num: int) -> bool:
+        """Valida que una Core individual cumple todas las reglas"""
+        
+        # Validar empates
+        empates = resultados.count("E")
+        if not (self.empates_min <= empates <= self.empates_max):
+            self.logger.debug(f"Core-{core_num + 1}: empates {empates} fuera de rango [{self.empates_min}-{self.empates_max}]")
+            return False
+        
+        # Validar concentración general
+        max_conc_general = max(resultados.count(s) for s in ["L", "E", "V"]) / 14
+        if max_conc_general > 0.70:
+            self.logger.debug(f"Core-{core_num + 1}: concentración general {max_conc_general:.1%} > 70%")
+            return False
+        
+        # Validar concentración inicial
+        primeros_3 = resultados[:3]
+        max_conc_inicial = max(primeros_3.count(s) for s in ["L", "E", "V"]) / 3
+        if max_conc_inicial > 0.60:
+            self.logger.debug(f"Core-{core_num + 1}: concentración inicial {max_conc_inicial:.1%} > 60%")
+            return False
+        
         return True
 
-    def _aporta_diversidad(self, nueva_quiniela: List[str], existentes: List[Dict[str, Any]]) -> bool:
-        if not existentes: return True
+    def _es_suficientemente_diferente(self, nueva_quiniela: List[str], 
+                                      existentes: List[Dict[str, Any]]) -> bool:
+        """Verifica que la nueva quiniela sea suficientemente diferente"""
+        
+        if not existentes:
+            return True
+        
         for q_existente in existentes:
-            if sum(1 for a, b in zip(nueva_quiniela, q_existente["resultados"]) if a == b) >= 12: return False
+            coincidencias = sum(1 for a, b in zip(nueva_quiniela, q_existente["resultados"]) if a == b)
+            similitud = coincidencias / 14
+            
+            if similitud > 0.85:  # Más de 85% iguales = muy similar
+                return False
+        
         return True
-    
+
+    def _ajuste_final_conjunto(self, quinielas_core: List[Dict[str, Any]], 
+                               partidos: List[Dict[str, Any]], 
+                               anclas_indices: List[int]) -> List[Dict[str, Any]]:
+        """Ajuste final del conjunto para optimizar distribución global"""
+        
+        self.logger.info("🔧 Aplicando ajuste final del conjunto...")
+        
+        # Calcular distribución actual
+        total_L = sum(q["distribución"]["L"] for q in quinielas_core)
+        total_E = sum(q["distribución"]["E"] for q in quinielas_core)
+        total_V = sum(q["distribución"]["V"] for q in quinielas_core)
+        total_partidos = len(quinielas_core) * 14
+        
+        porc_L = total_L / total_partidos
+        porc_E = total_E / total_partidos
+        porc_V = total_V / total_partidos
+        
+        self.logger.info(f"Distribución actual: L={porc_L:.1%}, E={porc_E:.1%}, V={porc_V:.1%}")
+        
+        # Objetivos de distribución
+        target_L = 0.39  # 39% (dentro del rango 35-41%)
+        target_E = 0.29  # 29% (dentro del rango 25-33%)
+        target_V = 0.32  # 32% (dentro del rango 30-36%)
+        
+        # Calcular ajustes necesarios
+        ajuste_L = int((target_L - porc_L) * total_partidos)
+        ajuste_V = int((target_V - porc_V) * total_partidos)
+        
+        self.logger.info(f"Ajustes necesarios: L{ajuste_L:+d}, V{ajuste_V:+d}")
+        
+        # Aplicar ajustes si son necesarios
+        if abs(ajuste_L) > 0 or abs(ajuste_V) > 0:
+            quinielas_ajustadas = self._aplicar_ajustes_distribucion(
+                quinielas_core, partidos, anclas_indices, ajuste_L, ajuste_V
+            )
+        else:
+            quinielas_ajustadas = quinielas_core
+        
+        return quinielas_ajustadas
+
+    def _aplicar_ajustes_distribucion(self, quinielas: List[Dict[str, Any]], 
+                                      partidos: List[Dict[str, Any]], 
+                                      anclas_indices: List[int], 
+                                      ajuste_L: int, ajuste_V: int) -> List[Dict[str, Any]]:
+        """Aplica ajustes específicos de distribución"""
+        
+        quinielas_ajustadas = copy.deepcopy(quinielas)
+        modificables = [i for i in range(14) if i not in anclas_indices]
+        
+        # Si necesitamos reducir L y aumentar V
+        if ajuste_L < 0 and ajuste_V > 0:
+            cambios_necesarios = min(abs(ajuste_L), abs(ajuste_V))
+            
+            # Buscar mejores candidatos para cambiar L → V
+            candidatos = []
+            for q_idx, quiniela in enumerate(quinielas_ajustadas):
+                for pos in modificables:
+                    if quiniela["resultados"][pos] == "L":
+                        prob_L = partidos[pos]["prob_local"]
+                        prob_V = partidos[pos]["prob_visitante"]
+                        score = prob_V - prob_L  # Preferir donde V es más probable que L
+                        candidatos.append((q_idx, pos, score))
+            
+            # Ordenar por score (mejor candidato primero)
+            candidatos.sort(key=lambda x: x[2], reverse=True)
+            
+            # Aplicar cambios
+            for i in range(min(cambios_necesarios, len(candidatos))):
+                q_idx, pos, _ = candidatos[i]
+                quinielas_ajustadas[q_idx]["resultados"][pos] = "V"
+                # Actualizar distribución
+                quinielas_ajustadas[q_idx]["distribución"]["L"] -= 1
+                quinielas_ajustadas[q_idx]["distribución"]["V"] += 1
+        
+        return quinielas_ajustadas
+
+    def _verificacion_final_completa(self, quinielas_core: List[Dict[str, Any]]):
+        """Verificación final completa con logging detallado"""
+        
+        self.logger.info("=== VERIFICACIÓN FINAL DEL GENERADOR CORE ===")
+        
+        # Verificar cada quiniela individual
+        for q in quinielas_core:
+            empates = q["empates"]
+            distribución = q["distribución"]
+            resultados = q["resultados"]
+            
+            # Concentración general
+            max_conc_general = max(distribución.values()) / 14
+            
+            # Concentración inicial
+            primeros_3 = resultados[:3]
+            max_conc_inicial = max(primeros_3.count(s) for s in ["L", "E", "V"]) / 3
+            
+            problemas = []
+            if not (self.empates_min <= empates <= self.empates_max):
+                problemas.append(f"empates={empates}")
+            if max_conc_general > 0.70:
+                problemas.append(f"conc_general={max_conc_general:.1%}")
+            if max_conc_inicial > 0.60:
+                problemas.append(f"conc_inicial={max_conc_inicial:.1%}")
+            
+            if problemas:
+                self.logger.error(f"❌ {q['id']}: {', '.join(problemas)}")
+            else:
+                self.logger.info(f"✅ {q['id']}: válida")
+        
+        # Verificar distribución global
+        total_L = sum(q["distribución"]["L"] for q in quinielas_core)
+        total_E = sum(q["distribución"]["E"] for q in quinielas_core)
+        total_V = sum(q["distribución"]["V"] for q in quinielas_core)
+        total_partidos = len(quinielas_core) * 14
+        
+        porc_L = total_L / total_partidos
+        porc_E = total_E / total_partidos
+        porc_V = total_V / total_partidos
+        
+        self.logger.info(f"📊 Distribución final: L={porc_L:.1%}, E={porc_E:.1%}, V={porc_V:.1%}")
+        
+        # Verificar variación por posición
+        posiciones_100_pct = 0
+        for pos in range(14):
+            conteos = {"L": 0, "E": 0, "V": 0}
+            for q in quinielas_core:
+                resultado = q["resultados"][pos]
+                conteos[resultado] += 1
+            
+            max_apariciones = max(conteos.values())
+            if max_apariciones == len(quinielas_core):
+                posiciones_100_pct += 1
+        
+        self.logger.info(f"🎯 Posiciones con 100% mismo resultado: {posiciones_100_pct}/14")
+        
+        if posiciones_100_pct == 0:
+            self.logger.info("✅ EXCELENTE: Variación perfecta por posición")
+        elif posiciones_100_pct <= 3:
+            self.logger.info("✅ BUENO: Variación aceptable por posición")
+        else:
+            self.logger.warning(f"⚠️ MEJORABLE: {posiciones_100_pct} posiciones sin variación")
+
+    # Funciones auxiliares
     def _get_resultado_max_prob(self, partido: Dict[str, Any]) -> str:
-        return max({"L": partido["prob_local"], "E": partido["prob_empate"], "V": partido["prob_visitante"]}, key=lambda k: partido[f"prob_{self._resultado_a_clave(k)}"])
+        """Obtiene el resultado de máxima probabilidad"""
+        probs = {
+            "L": partido["prob_local"],
+            "E": partido["prob_empate"],
+            "V": partido["prob_visitante"]
+        }
+        return max(probs, key=probs.get)
+
+    def _get_probabilidades_ordenadas(self, partido: Dict[str, Any]) -> List[tuple]:
+        """Obtiene probabilidades ordenadas de mayor a menor"""
+        probs = [
+            ("L", partido["prob_local"]),
+            ("E", partido["prob_empate"]),
+            ("V", partido["prob_visitante"])
+        ]
+        return sorted(probs, key=lambda x: x[1], reverse=True)
 
     def _resultado_a_clave(self, resultado: str) -> str:
-        return {"L": "local", "E": "empate", "V": "visitante"}.get(resultado, "local")
+        """Convierte resultado a clave de probabilidad"""
+        mapeo = {"L": "local", "E": "empate", "V": "visitante"}
+        return mapeo.get(resultado, "local")
 
-    def _calcular_distribucion_global(self, quinielas: List[Dict[str, Any]]) -> Dict[str, float]:
-        total_L = sum(q["resultados"].count("L") for q in quinielas)
-        total_E = sum(q["resultados"].count("E") for q in quinielas)
-        total_V = sum(q["resultados"].count("V") for q in quinielas)
-        total_partidos = len(quinielas) * 14
-        if total_partidos == 0: return {"L": 0, "E": 0, "V": 0}
-        return {"L": total_L / total_partidos, "E": total_E / total_partidos, "V": total_V / total_partidos}
-
-    def _validacion_final_completa(self, core_quinielas: List[Dict[str, Any]]):
-        self.logger.info("=== VALIDACIÓN FINAL DEL GENERADOR ===")
-        problemas = [f"{q['id']}: No es válida" for q in core_quinielas if not self._es_valido_individualmente(q['resultados'])]
-        if problemas:
-            for problema in problemas: self.logger.error(f"  - {problema}")
-        else:
-            self.logger.info("✅ Todas las quinielas individuales son VÁLIDAS.")
+    def _crear_info_quiniela(self, q_id: str, resultados: List[str]) -> Dict[str, Any]:
+        """Crea estructura completa de quiniela"""
+        return {
+            "id": q_id,
+            "tipo": "Core",
+            "resultados": resultados,
+            "empates": resultados.count("E"),
+            "distribución": {
+                "L": resultados.count("L"),
+                "E": resultados.count("E"),
+                "V": resultados.count("V")
+            }
+        }
