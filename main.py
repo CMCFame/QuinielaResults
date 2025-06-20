@@ -10,7 +10,7 @@ import os
 import time
 import traceback
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import pandas as pd
 
 # Configurar logging antes de importar otros módulos
@@ -169,59 +169,41 @@ class EnhancedProgolOptimizer:
                 self.instrumentor.end_timer(attempt_timer, success=True, metrics={
                     "final_attempt": intento + 1,
                     "session_duration": session_duration,
-                    "portfolio_valid": resultado_final["validacion"]["es_valido"],
-                    "ai_used": resultado_final.get("ai_utilizada", False),
-                    "strategy_used": resultado_final.get("estrategia_final", "unknown")
+                    "portfolio_valid": resultado_final["validacion"]["es_valido"]
                 })
                 
-                self.instrumentor.end_timer(self.session_timer, success=True, metrics={
-                    "total_attempts": intento + 1,
-                    "session_duration": session_duration,
-                    **self.strategy_usage
-                })
-                
-                self.logger.info(f"✅ Concurso {concurso_id} procesado exitosamente en {session_duration:.1f}s")
+                self.logger.info(f"🎉 Concurso {concurso_id} procesado exitosamente en intento {intento + 1}")
                 return resultado_final
                 
             except Exception as e:
                 self.instrumentor.end_timer(attempt_timer, success=False)
                 self.logger.error(f"❌ Error en intento {intento + 1}: {e}")
                 
-                if intento < max_intentos - 1:
-                    self.logger.info(f"🔄 Reintentando con estrategia alternativa...")
-                    # Cambiar estrategia para siguiente intento
-                    if metodo_preferido == "enhanced_hybrid":
-                        metodo_preferido = "legacy"
-                    else:
-                        metodo_preferido = "enhanced_hybrid"
-                else:
-                    # Último intento falló
-                    self.instrumentor.end_timer(self.session_timer, success=False)
-                    return self._generar_resultado_error(concurso_id, str(e))
+                if intento == max_intentos - 1:
+                    # Último intento fallido
+                    self.logger.error("💥 Todos los intentos fallaron")
+                    return self._generar_resultado_error(concurso_id, f"Falló después de {max_intentos} intentos: {e}")
         
-        # Si llegamos aquí, todos los intentos fallaron
-        self.instrumentor.end_timer(self.session_timer, success=False)
-        return self._generar_resultado_error(concurso_id, "Todos los intentos de optimización fallaron")
+        # No debería llegar aquí, pero por seguridad
+        return self._generar_resultado_error(concurso_id, "Error desconocido en el procesamiento")
     
     def _fase_preparacion_datos(self, archivo_datos: str, intento: int) -> Optional[List[Dict[str, Any]]]:
         """
-        Fase 1: Preparación y validación rigurosa de datos
+        Fase 1: Preparación rigurosa de datos con validación y clasificación
         """
         phase_timer = self.instrumentor.start_timer("phase_data_preparation")
         
         try:
             self.logger.info("📊 FASE 1: Preparación de datos")
             
-            # 1.1: Carga de datos con garantías mejoradas
+            # 1.1: Cargar o generar datos
             if archivo_datos:
-                self.logger.info(f"📂 Cargando datos desde: {archivo_datos}")
-                partidos = self.data_loader.cargar_datos(archivo_datos)
+                partidos = self.data_loader.cargar_partidos_desde_archivo(archivo_datos)
             else:
-                self.logger.info("🎲 Generando datos optimizados con Anclas garantizadas")
-                partidos = self.data_loader._generar_datos_optimizados()
+                partidos = self.data_loader.generar_datos_ejemplo_mejorados()
             
-            if not partidos or len(partidos) != 14:
-                self.logger.error(f"❌ Datos inválidos: {len(partidos) if partidos else 0} partidos")
+            if not partidos:
+                self.logger.error("❌ No se pudieron cargar los datos")
                 self.instrumentor.end_timer(phase_timer, success=False)
                 return None
             
@@ -291,6 +273,8 @@ class EnhancedProgolOptimizer:
                 estrategia = metodo_preferido
             
             self.logger.info(f"🔧 Usando estrategia: {estrategia}")
+            
+            portafolio = None
             
             # Ejecutar estrategia seleccionada
             if estrategia == "enhanced_hybrid" and ENHANCED_HYBRID_AVAILABLE:
@@ -510,26 +494,36 @@ class EnhancedProgolOptimizer:
         strategy_timer = self.instrumentor.start_timer("strategy_legacy")
         
         try:
-            self.logger.info("🏗️ Ejecutando estrategia legacy (Core + Satélites + GRASP)")
+            self.logger.info("🔧 Ejecutando estrategia legacy (Core + Satélites + GRASP)")
             
-            # Generar 4 quinielas Core
+            # Generador de Core
             core_generator = CoreGenerator()
             quinielas_core = core_generator.generar_quinielas_core(partidos)
             
-            # Generar 26 satélites en pares
-            satellite_generator = SatelliteGenerator()
-            quinielas_satelites = satellite_generator.generar_pares_satelites(partidos, 26)
+            if not quinielas_core or len(quinielas_core) != 4:
+                self.logger.error("❌ No se pudieron generar quinielas Core")
+                return None
             
-            # Optimización GRASP-Annealing
+            # Generador de Satélites
+            satellite_generator = SatelliteGenerator()
+            quinielas_satelites = satellite_generator.generar_satelites_optimizados(
+                partidos, quinielas_core
+            )
+            
+            if not quinielas_satelites or len(quinielas_satelites) != 26:
+                self.logger.error("❌ No se pudieron generar quinielas Satélite")
+                return None
+            
+            # Combinar y optimizar con GRASP-Annealing
             portafolio_inicial = quinielas_core + quinielas_satelites
             portafolio_optimizado = self.legacy_optimizer.optimizar_portafolio_grasp_annealing(
                 portafolio_inicial, partidos
             )
             
             self.instrumentor.end_timer(strategy_timer, success=True, metrics={
-                "cores_generated": len(quinielas_core),
+                "core_generated": len(quinielas_core),
                 "satellites_generated": len(quinielas_satelites),
-                "final_portfolio_size": len(portafolio_optimizado)
+                "portfolio_optimized": portafolio_optimizado is not None
             })
             
             return portafolio_optimizado
@@ -539,155 +533,115 @@ class EnhancedProgolOptimizer:
             self.logger.error(f"Error en estrategia legacy: {e}")
             return None
     
-    def _ejecutar_fallback_emergencia(self, partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _ejecutar_fallback_emergencia(self, partidos: List[Dict[str, Any]]) -> Optional[List[Dict[str, Any]]]:
         """
-        Fallback de emergencia que SIEMPRE genera un portafolio válido
+        Fallback de emergencia con generación determinística simple
         """
-        emergency_timer = self.instrumentor.start_timer("emergency_fallback")
+        fallback_timer = self.instrumentor.start_timer("strategy_emergency_fallback")
         
         try:
             self.logger.warning("🚨 Ejecutando fallback de emergencia")
             
-            # Crear portafolio ultra-simple pero válido
-            portfolio = []
-            base_pattern = ["L", "L", "E", "V", "L", "E", "E", "V", "L", "E", "V", "V", "L", "E"]
+            # Generación simple y determinística
+            portafolio_emergencia = []
             
-            for q in range(30):
-                # Rotar patrón para crear variedad
-                rotated = base_pattern[q % len(base_pattern):] + base_pattern[:q % len(base_pattern)]
-                if len(rotated) != 14:
-                    rotated = (rotated * 14)[:14]
+            for i in range(30):
+                quiniela_simple = {
+                    "id": i,
+                    "tipo": "Emergency",
+                    "quiniela": [],
+                    "distribución": {"L": 0, "E": 0, "V": 0}
+                }
                 
-                # Forzar anclas
-                for i, partido in enumerate(partidos):
-                    if partido.get("clasificacion") == "Ancla":
-                        probs = [partido["prob_local"], partido["prob_empate"], partido["prob_visitante"]]
-                        rotated[i] = ["L", "E", "V"][np.argmax(probs)]
+                # Asignación simple basada en probabilidades más altas
+                for partido in partidos:
+                    prob_local = partido.get("prob_local", 0.33)
+                    prob_empate = partido.get("prob_empate", 0.33)
+                    prob_visitante = partido.get("prob_visitante", 0.33)
+                    
+                    if prob_local >= prob_empate and prob_local >= prob_visitante:
+                        resultado = "L"
+                    elif prob_empate >= prob_visitante:
+                        resultado = "E"
+                    else:
+                        resultado = "V"
+                    
+                    quiniela_simple["quiniela"].append(resultado)
+                    quiniela_simple["distribución"][resultado] += 1
                 
-                # Asegurar 4-6 empates
-                empates = rotated.count("E")
-                while empates < 4:
-                    for i in range(14):
-                        if rotated[i] in ["L", "V"] and partidos[i].get("clasificacion") != "Ancla":
-                            rotated[i] = "E"
-                            empates += 1
-                            break
-                
-                while empates > 6:
-                    for i in range(14):
-                        if rotated[i] == "E" and partidos[i].get("clasificacion") != "Ancla":
-                            rotated[i] = "L"
-                            empates -= 1
-                            break
-                
-                # Crear quiniela
-                quiniela_type = "Core" if q < 4 else "Satelite"
-                if q < 4:
-                    quiniela_id = f"Core-{q + 1}"
-                    par_id = None
-                else:
-                    sat_index = q - 4
-                    par_id = sat_index // 2
-                    sub_id = "A" if sat_index % 2 == 0 else "B"
-                    quiniela_id = f"Sat-{par_id + 1}{sub_id}"
-                
-                empates_final = rotated.count("E")
-                portfolio.append({
-                    "id": quiniela_id,
-                    "tipo": quiniela_type,
-                    "par_id": par_id,
-                    "resultados": rotated.copy(),
-                    "empates": empates_final,
-                    "distribución": {
-                        "L": rotated.count("L"),
-                        "E": empates_final,
-                        "V": rotated.count("V")
-                    }
-                })
+                portafolio_emergencia.append(quiniela_simple)
             
-            self.instrumentor.end_timer(emergency_timer, success=True, metrics={
-                "emergency_portfolio_size": len(portfolio)
+            self.instrumentor.end_timer(fallback_timer, success=True, metrics={
+                "emergency_portfolio_generated": len(portafolio_emergencia)
             })
             
-            self.logger.info(f"✅ Fallback de emergencia generó {len(portfolio)} quinielas")
-            return portfolio
+            return portafolio_emergencia
             
         except Exception as e:
-            self.instrumentor.end_timer(emergency_timer, success=False)
-            self.logger.error(f"❌ Incluso el fallback de emergencia falló: {e}")
-            return []
+            self.instrumentor.end_timer(fallback_timer, success=False)
+            self.logger.error(f"Error en fallback de emergencia: {e}")
+            return None
     
     def _corregir_quinielas_individuales(self, portafolio: List[Dict[str, Any]], 
                                        partidos: List[Dict[str, Any]]) -> Optional[List[Dict[str, Any]]]:
         """
-        Corrige quinielas individuales problemáticas usando IA con safeguards
+        Corrección individual de quinielas con problemas usando IA
         """
-        portafolio_corregido = []
-        correcciones_exitosas = 0
+        correction_timer = self.instrumentor.start_timer("individual_ai_corrections")
         
-        for quiniela in portafolio:
-            problemas = self._detectar_problemas_quiniela_individual(quiniela)
+        try:
+            portafolio_corregido = []
+            correcciones_aplicadas = 0
             
-            if problemas and quiniela["tipo"] != "Core":  # No tocar Cores con IA
-                self.logger.debug(f"🔧 Corrigiendo {quiniela['id']}: {problemas}")
+            for quiniela in portafolio:
+                # Validar quiniela individual
+                validacion_individual = self.portfolio_validator.validar_quiniela_individual(quiniela)
                 
-                quiniela_corregida = self.ai_assistant.corregir_quiniela_con_safeguards(
-                    quiniela, partidos, problemas
-                )
-                
-                if quiniela_corregida:
-                    problemas_nuevos = self._detectar_problemas_quiniela_individual(quiniela_corregida)
-                    if len(problemas_nuevos) < len(problemas):
+                if not validacion_individual["es_valida"] and self.ai_assistant.enabled:
+                    # Intentar corrección con IA
+                    reglas_violadas = validacion_individual.get("reglas_violadas", [])
+                    quiniela_corregida = self.ai_assistant.corregir_quiniela_con_safeguards(
+                        quiniela, partidos, reglas_violadas
+                    )
+                    
+                    if quiniela_corregida:
                         portafolio_corregido.append(quiniela_corregida)
-                        correcciones_exitosas += 1
+                        correcciones_aplicadas += 1
                     else:
-                        portafolio_corregido.append(quiniela)
+                        portafolio_corregido.append(quiniela)  # Conservar original si no se pudo corregir
                 else:
-                    portafolio_corregido.append(quiniela)
-            else:
-                portafolio_corregido.append(quiniela)
-        
-        self.logger.info(f"🤖 IA corrigió {correcciones_exitosas} quinielas individuales")
-        return portafolio_corregido if correcciones_exitosas > 0 else None
-    
-    def _detectar_problemas_quiniela_individual(self, quiniela: Dict[str, Any]) -> List[str]:
-        """Detecta problemas específicos en una quiniela individual"""
-        problemas = []
-        
-        empates = quiniela.get("empates", 0)
-        if not (4 <= empates <= 6):
-            problemas.append(f"empates_invalidos_{empates}")
-        
-        if "distribución" in quiniela:
-            dist = quiniela["distribución"]
-            max_conc = max(dist.values()) / 14
-            if max_conc > 0.70:
-                signo = max(dist, key=dist.get)
-                problemas.append(f"concentracion_excesiva_{signo}")
-        
-        if "resultados" in quiniela and len(quiniela["resultados"]) >= 3:
-            primeros_3 = quiniela["resultados"][:3]
-            for signo in ["L", "E", "V"]:
-                if primeros_3.count(signo) > 2:
-                    problemas.append(f"concentracion_inicial_{signo}")
-        
-        return problemas
+                    portafolio_corregido.append(quiniela)  # Quiniela válida, conservar
+            
+            self.instrumentor.end_timer(correction_timer, success=True, metrics={
+                "individual_corrections_applied": correcciones_aplicadas
+            })
+            
+            self.logger.info(f"🔧 Aplicadas {correcciones_aplicadas} correcciones individuales")
+            return portafolio_corregido
+            
+        except Exception as e:
+            self.instrumentor.end_timer(correction_timer, success=False)
+            self.logger.error(f"Error en correcciones individuales: {e}")
+            return None
     
     def _requiere_correccion_global(self, portafolio: List[Dict[str, Any]]) -> bool:
-        """Determina si el portafolio requiere corrección global"""
-        if not portafolio:
-            return True
-        
+        """
+        Determina si se requiere corrección global del portafolio
+        """
+        # Verificar distribución global
         total_L = sum(q.get("distribución", {}).get("L", 0) for q in portafolio)
         total_E = sum(q.get("distribución", {}).get("E", 0) for q in portafolio)
         total_V = sum(q.get("distribución", {}).get("V", 0) for q in portafolio)
-        total = total_L + total_E + total_V
         
+        total = total_L + total_E + total_V
         if total == 0:
             return True
         
-        porc_L, porc_E, porc_V = total_L/total, total_E/total, total_V/total
+        porc_L = total_L / total
+        porc_E = total_E / total
+        porc_V = total_V / total
         
+        # Rangos históricos esperados
         return not (0.35 <= porc_L <= 0.41 and 0.25 <= porc_E <= 0.33 and 0.30 <= porc_V <= 0.36)
     
     def _forzar_anclas_minimas(self, partidos: List[Dict[str, Any]]):
