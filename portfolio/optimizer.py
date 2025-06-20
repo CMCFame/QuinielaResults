@@ -1,8 +1,12 @@
-# progol_optimizer/portfolio/optimizer.py - CORRECCIÃ“N DEFINITIVA
+# -*- coding: utf-8 -*-
+# progol_optimizer/portfolio/optimizer.py - CORRECCI¨®N DEFINITIVA
 """
-Optimizador GRASP-Annealing - CORRECCIÃ“N DEFINITIVA
-Menos restrictivo durante optimizaciÃ³n, mÃ¡s agresivo en ajuste final
+Optimizador GRASP-Annealing - CORRECCI¨®N DEFINITIVA
+Menos restrictivo durante optimizaci¨®n, m¨¢s agresivo en ajuste final
 """
+
+import logging
+# ... (el resto del archivo contin¨²a como estaba)
 
 import logging
 import random
