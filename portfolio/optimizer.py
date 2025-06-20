@@ -4,6 +4,7 @@
 Optimizador GRASP-Annealing - CORRECCI¨®N DEFINITIVA
 Menos restrictivo durante optimizaci¨®n, m¨¢s agresivo en ajuste final
 """
+# ... el resto del archivo sin cambios ...
 
 import logging
 # ... (el resto del archivo contin¨²a como estaba)
