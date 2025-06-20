@@ -506,8 +506,11 @@ class EnhancedProgolOptimizer:
             
             # Generador de Satélites
             satellite_generator = SatelliteGenerator()
-            quinielas_satelites = satellite_generator.generar_satelites_optimizados(
-                partidos, quinielas_core
+            from config.constants import PROGOL_CONFIG
+            num_satelites = PROGOL_CONFIG["ARQUITECTURA_PORTAFOLIO"]["num_satelites"]
+            
+            quinielas_satelites = satellite_generator.generar_pares_satelites(
+                partidos, num_satelites
             )
             
             if not quinielas_satelites or len(quinielas_satelites) != 26:
@@ -549,7 +552,7 @@ class EnhancedProgolOptimizer:
                 quiniela_simple = {
                     "id": i,
                     "tipo": "Emergency",
-                    "quiniela": [],
+                    "resultados": [],
                     "distribución": {"L": 0, "E": 0, "V": 0}
                 }
                 
@@ -566,7 +569,7 @@ class EnhancedProgolOptimizer:
                     else:
                         resultado = "V"
                     
-                    quiniela_simple["quiniela"].append(resultado)
+                    quiniela_simple["resultados"].append(resultado)
                     quiniela_simple["distribución"][resultado] += 1
                 
                 portafolio_emergencia.append(quiniela_simple)
