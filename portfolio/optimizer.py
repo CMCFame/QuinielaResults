@@ -96,7 +96,7 @@ class GRASPAnnealing:
         mejor_portafolio = self._ajuste_final_definitivo(mejor_portafolio, partidos)
 
         score_final = self._calcular_objetivo_f_optimizado(mejor_portafolio, partidos)
-        self.logger.info(f"✅ Optimización DEFINITIVA completada: F={score_final:.6f}")
+        self.logger.info(f"�?Optimización DEFINITIVA completada: F={score_final:.6f}")
         return mejor_portafolio
 
     def _generar_movimiento_valido_mejorado(self, portafolio: List[Dict[str, Any]], partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -232,13 +232,13 @@ class GRASPAnnealing:
 
     def _forzar_concentracion_valida(self, resultados: List[str], partidos: List[Dict[str, Any]]) -> List[str]:
         """
-        FUERZA que una quiniela tenga concentración válida ≤70% general y ≤60% primeros 3
+        FUERZA que una quiniela tenga concentración válida �?0% general y �?0% primeros 3
         """
         resultados_corregidos = resultados.copy()
         anclas_indices = [i for i, p in enumerate(partidos) if p.get("clasificacion") == "Ancla"]
         modificables = [i for i in range(14) if i not in anclas_indices]
         
-        # Corrección 1: Concentración general ≤70% (máximo 9 de 14)
+        # Corrección 1: Concentración general �?0% (máximo 9 de 14)
         max_permitido_general = int(14 * 0.70)  # 9
         for signo in ["L", "E", "V"]:
             count_signo = resultados_corregidos.count(signo)
@@ -257,7 +257,7 @@ class GRASPAnnealing:
                     mejor_cambio = min(otros_signos, key=lambda s: resultados_corregidos.count(s))
                     resultados_corregidos[idx] = mejor_cambio
 
-        # Corrección 2: Concentración inicial ≤60% (máximo 1 de 3)
+        # Corrección 2: Concentración inicial �?0% (máximo 1 de 3)
         max_permitido_inicial = int(3 * 0.60)  # 1
         for signo in ["L", "E", "V"]:
             count_inicial = resultados_corregidos[:3].count(signo)
@@ -279,64 +279,78 @@ class GRASPAnnealing:
         return resultados_corregidos
 
     def _balancear_posicion_agresivo(self, portafolio: List[Dict[str, Any]], posicion: int, partidos: List[Dict[str, Any]]) -> int:
-        """
-        Balancea AGRESIVAMENTE una posición específica
-        """
-        if partidos[posicion].get("clasificacion") == "Ancla":
-            return 0  # No tocar anclas
+            """
+            Balancea AGRESIVAMENTE una posici��n espec��fica para cumplir con max y min de apariciones.
+            """
+            if partidos[posicion].get("clasificacion") == "Ancla":
+                return 0  # No tocar anclas
+
+            total_quinielas = len(portafolio)
+            max_apariciones = int(total_quinielas * 0.67)
+            min_apariciones = int(total_quinielas * 0.10)
             
-        total_quinielas = len(portafolio)
-        max_apariciones = int(total_quinielas * 0.67)  # 67% máximo
-        
-        # Contar apariciones actuales
-        conteos = {"L": 0, "E": 0, "V": 0}
-        for q in portafolio:
-            conteos[q["resultados"][posicion]] += 1
-        
-        cambios_realizados = 0
-        
-        # Encontrar signos que exceden el límite
-        for signo, count in conteos.items():
-            if count > max_apariciones:
-                exceso = count - max_apariciones
-                
-                # Encontrar candidatos para cambiar (solo satélites)
-                candidatos = []
-                for i, q in enumerate(portafolio):
-                    if q["tipo"] == "Satelite" and q["resultados"][posicion] == signo:
-                        prob_actual = partidos[posicion][f"prob_{self._resultado_a_clave(signo)}"]
-                        candidatos.append((i, prob_actual))
-                
-                # Ordenar por probabilidad (cambiar los menos probables)
-                candidatos.sort(key=lambda x: x[1])
-                
-                # Realizar cambios
-                for j in range(min(exceso, len(candidatos))):
-                    q_idx, _ = candidatos[j]
+            conteos = {"L": 0, "E": 0, "V": 0}
+            indices_por_signo = {"L": [], "E": [], "V": []}
+
+            # Solo modificar sat��lites para mantener los Core estables
+            for i, q in enumerate(portafolio):
+                if q.get("tipo") == "Satelite":
+                    resultado = q["resultados"][posicion]
+                    conteos[resultado] += 1
+                    indices_por_signo[resultado].append(i)
+
+            cambios_realizados = 0
+
+            # Corregir exceso (signos que aparecen DEMASIADO)
+            for signo_exceso in ["L", "E", "V"]:
+                if conteos[signo_exceso] > max_apariciones:
+                    exceso = conteos[signo_exceso] - max_apariciones
+                    signos_destino = [s for s, c in conteos.items() if c < max_apariciones]
+                    if not signos_destino: continue
+
+                    candidatos_a_cambiar = indices_por_signo[signo_exceso]
+                    candidatos_a_cambiar.sort(key=lambda i: partidos[posicion][f"prob_{self._resultado_a_clave(signo_exceso)}"])
+
+                    for i in range(min(exceso, len(candidatos_a_cambiar))):
+                        q_idx = candidatos_a_cambiar[i]
+                        destino = min(signos_destino, key=lambda s: conteos[s])
+                        
+                        portafolio[q_idx]["resultados"][posicion] = destino
+                        cambios_realizados += 1
+                        conteos[signo_exceso] -= 1
+                        conteos[destino] += 1
+            
+            # Corregir defecto (signos que aparecen MUY POCO)
+            for signo_defecto in ["L", "E", "V"]:
+                if conteos[signo_defecto] < min_apariciones:
+                    necesarios = min_apariciones - conteos[signo_defecto]
+                    signos_fuente = [s for s, c in conteos.items() if c > min_apariciones + necesarios]
+                    if not signos_fuente: continue
                     
-                    # Encontrar el signo menos usado en esta posición
-                    menos_usado = min(conteos, key=conteos.get)
+                    fuente = max(signos_fuente, key=lambda s: conteos[s])
                     
-                    # Aplicar cambio
-                    quiniela = portafolio[q_idx]
-                    resultados_nuevos = quiniela["resultados"].copy()
-                    resultados_nuevos[posicion] = menos_usado
+                    candidatos_a_cambiar = indices_por_signo[fuente]
+                    if not candidatos_a_cambiar: continue
                     
-                    # Actualizar quiniela
-                    portafolio[q_idx]["resultados"] = resultados_nuevos
-                    portafolio[q_idx]["empates"] = resultados_nuevos.count("E")
-                    portafolio[q_idx]["distribución"] = {
-                        "L": resultados_nuevos.count("L"),
-                        "E": resultados_nuevos.count("E"),
-                        "V": resultados_nuevos.count("V")
-                    }
-                    
-                    # Actualizar conteos
-                    conteos[signo] -= 1
-                    conteos[menos_usado] += 1
-                    cambios_realizados += 1
-        
-        return cambios_realizados
+                    candidatos_a_cambiar.sort(key=lambda i: partidos[posicion][f"prob_{self._resultado_a_clave(fuente)}"], reverse=True)
+
+                    for i in range(min(necesarios, len(candidatos_a_cambiar))):
+                        q_idx = candidatos_a_cambiar[i]
+                        portafolio[q_idx]["resultados"][posicion] = signo_defecto
+                        cambios_realizados += 1
+                        conteos[fuente] -= 1
+                        conteos[signo_defecto] += 1
+
+            # Re-calcular la distribuci��n en las quinielas modificadas si hubo cambios
+            if cambios_realizados > 0:
+                quinielas_modificadas_indices = {idx for sublist in indices_por_signo.values() for idx in sublist}
+                for i in quinielas_modificadas_indices:
+                    quiniela = portafolio[i]
+                    resultados = quiniela["resultados"]
+                    quiniela["empates"] = resultados.count("E")
+                    quiniela["distribuci��n"] = {"L": resultados.count("L"), "E": resultados.count("E"), "V": resultados.count("V")}
+            
+            return cambios_realizados
 
     def _precalcular_matrices_probabilidades(self, partidos: List[Dict[str, Any]]):
         self.probabilidades_matrix = np.zeros((14, 3))
@@ -364,7 +378,7 @@ class GRASPAnnealing:
         return resultado
 
     def _calcular_prob_11_montecarlo_rapido(self, resultados: List[str], partidos: List[Dict[str, Any]]) -> float:
-        """CORREGIDO: Cálculo rápido de probabilidad ≥11 aciertos"""
+        """CORREGIDO: Cálculo rápido de probabilidad �?1 aciertos"""
         num_simulaciones = 1000
         
         # CORRECCIÓN: Mapeo correcto de nombres

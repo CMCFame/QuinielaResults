@@ -28,6 +28,43 @@ class PortfolioValidator:
         self.concentracion_inicial = self.config["CONCENTRACION_MAX_INICIAL"]
         
         self.logger.debug("PortfolioValidator inicializado con reglas del documento")
+
+    def validar_quiniela_individual(self, quiniela: Dict[str, Any]) -> Dict[str, Any]:
+            """
+            Valida las reglas que aplican a una sola quiniela (empates y concentración).
+            Este método es utilizado por el asistente de IA antes de una corrección.
+            """
+            reglas_violadas = []
+            
+            # 1. Validar empates
+            empates = quiniela["resultados"].count("E")
+            if not (self.empates_min <= empates <= self.empates_max):
+                reglas_violadas.append(f"empates_fuera_de_rango_{empates}")
+
+            # 2. Validar concentración general
+            resultados = quiniela["resultados"]
+            max_concentracion_general = max(
+                resultados.count("L") / 14,
+                resultados.count("E") / 14,
+                resultados.count("V") / 14
+            )
+            if max_concentracion_general > self.concentracion_max:
+                reglas_violadas.append(f"concentracion_general_excesiva_{max_concentracion_general:.2f}")
+
+            # 3. Validar concentración inicial
+            primeros_3 = resultados[:3]
+            max_concentracion_inicial = max(
+                primeros_3.count("L") / 3,
+                primeros_3.count("E") / 3,
+                primeros_3.count("V") / 3
+            )
+            if max_concentracion_inicial > self.concentracion_inicial:
+                reglas_violadas.append(f"concentracion_inicial_excesiva_{max_concentracion_inicial:.2f}")
+
+            return {
+                "es_valida": len(reglas_violadas) == 0,
+                "reglas_violadas": reglas_violadas
+            }
     
     def validar_portafolio_completo(self, portafolio: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
