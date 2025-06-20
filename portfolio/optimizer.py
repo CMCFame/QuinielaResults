@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# progol_optimizer/portfolio/optimizer.py - CORRECCI¨®N DEFINITIVA
 """
 Optimizador GRASP-Annealing - CORRECCI¨®N DEFINITIVA
 Menos restrictivo durante optimizaci¨®n, m¨¢s agresivo en ajuste final
