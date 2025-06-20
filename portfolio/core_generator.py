@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 progol_optimizer/portfolio/core_generator.py
-Generador de Quinielas Core – Versión 2025-06-20
+Generador de Quinielas Core – Versión 2025-06-20 b
 •  Garantiza 4 quinielas distintas con ≥ 2 diferencias entre sí
 •  Cumple rango de empates y distribución L/E/V definidos en PROGOL_CONFIG
 •  Registra en DEBUG todos los cambios aplicados
@@ -70,7 +70,6 @@ class CoreGenerator:
             if idx in anclas:
                 q[idx] = proba[0][0]                     # siempre la máxima
             else:
-                # Elegir la opción que mejor armoniza con distribución global
                 for res,_ in proba:
                     tent = q.copy()
                     tent[idx] = res
@@ -88,19 +87,20 @@ class CoreGenerator:
                          intento: int) -> List[str]:
         q = base.copy()
         modificables = [i for i in range(14) if i not in anclas]
-        # Ordenar por “gap” entre 1ª y 2ª probabilidad: más gap = más seguros; variamos los menos seguros
         mods_orden = sorted(modificables,
                             key=lambda i: self._ordenar_prob(partidos[i])[0][1] -
                                           self._ordenar_prob(partidos[i])[1][1])
-        random.shuffle(mods_orden)                       # evita patrón fijo
+        random.shuffle(mods_orden)
         cambios_realizados = 0
+        objetivo = min(3, core_idx + 1)   # 1,2,3,3 cambios para Core 1-4
+
         for pos in mods_orden:
             mejor, segundo = self._ordenar_prob(partidos[pos])[:2]
-            objetivo = segundo if segundo[1] >= 0.8*mejor[1] else mejor
-            if q[pos] != objetivo[0]:                    # aplica sólo si cambia
-                q[pos] = objetivo[0]
+            objetivo_res = segundo if segundo[1] >= 0.8*mejor[1] else mejor
+            if q[pos] != objetivo_res[0]:
+                q[pos] = objetivo_res[0]
                 cambios_realizados += 1
-            if cambios_realizados >= (core_idx if core_idx < 3 else 3):
+            if cambios_realizados >= objetivo:
                 break
         self.logger.debug("Core %d intento %d → %s",
                           core_idx+1, intento+1, "".join(q))
@@ -113,7 +113,6 @@ class CoreGenerator:
                             anclas: List[int]) -> List[str]:
         q = q.copy()
         empates = q.count("E")
-        # INSERTAR empates faltantes
         if empates < self.empates_min:
             candidatos = [i for i in range(14)
                           if i not in anclas and q[i] != "E"]
@@ -123,20 +122,18 @@ class CoreGenerator:
                 empates += 1
                 if empates >= self.empates_min:
                     break
-        # REMOVER empates sobrantes
         elif empates > self.empates_max:
             candidatos = [i for i in range(14)
                           if i not in anclas and q[i] == "E"]
             candidatos.sort(key=lambda i: partidos[i]["prob_empate"])
             for idx in candidatos:
-                q[idx] = self._ordenar_prob(partidos[idx])[0][0]  # mejor no-empate
+                q[idx] = self._ordenar_prob(partidos[idx])[0][0]
                 empates -= 1
                 if empates <= self.empates_max:
                     break
         return q
 
     def _respeta_rangos(self, q: List[str]) -> bool:
-        # Devuelve True si la distribución provisional no viola máximos históricos
         if "" in q:
             return True
         for res in ("L","E","V"):
