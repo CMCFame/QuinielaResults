@@ -258,6 +258,13 @@ class StepByStepProgolApp:
         
         st.success("✅ Prerequisitos cumplidos")
         
+        # NUEVA OPCIÓN: Modo de clasificación
+        modo_clasificacion = st.radio(
+            "🔧 Modo de Clasificación:",
+            ["Sin Calibración (Datos Originales)", "Con Calibración Bayesiana"],
+            help="Sin calibración usa probabilidades originales, con calibración las ajusta"
+        )
+        
         # Botón para ejecutar clasificación
         if st.button("▶️ Ejecutar Clasificación", type="primary"):
             with st.spinner("Clasificando partidos..."):
@@ -265,9 +272,14 @@ class StepByStepProgolApp:
                     # Tomar datos del paso anterior
                     datos = st.session_state.datos_paso1
                     
-                    # Aplicar calibración bayesiana primero
-                    st.info("🔄 Aplicando calibración bayesiana...")
-                    partidos_calibrados = self.calibrator.calibrar_concurso_completo(datos)
+                    if modo_clasificacion == "Con Calibración Bayesiana":
+                        # Aplicar calibración bayesiana primero
+                        st.info("🔄 Aplicando calibración bayesiana...")
+                        partidos_calibrados = self.calibrator.calibrar_concurso_completo(datos)
+                    else:
+                        # Usar datos originales sin calibración
+                        st.info("🔄 Usando probabilidades originales...")
+                        partidos_calibrados = datos
                     
                     # Clasificar cada partido
                     st.info("🔄 Clasificando partidos...")
@@ -285,6 +297,7 @@ class StepByStepProgolApp:
                     # Guardar resultados
                     st.session_state.partidos_clasificados = partidos_clasificados
                     st.session_state.estadisticas_clasificacion = self.classifier.obtener_estadisticas_clasificacion(partidos_clasificados)
+                    st.session_state.modo_usado = modo_clasificacion
                     
                     st.success("✅ Clasificación completada")
                     
@@ -296,6 +309,13 @@ class StepByStepProgolApp:
         if 'partidos_clasificados' in st.session_state:
             st.markdown("---")
             st.subheader("📋 Resultados de Clasificación")
+            
+            # Mostrar modo usado
+            modo_usado = st.session_state.get('modo_usado', 'Desconocido')
+            if modo_usado == "Sin Calibración (Datos Originales)":
+                st.info("📊 **Modo usado**: Probabilidades originales (sin calibración)")
+            else:
+                st.info("📊 **Modo usado**: Con calibración bayesiana aplicada")
             
             partidos = st.session_state.partidos_clasificados
             stats = st.session_state.estadisticas_clasificacion
@@ -618,7 +638,7 @@ class StepByStepProgolApp:
                     prob_visitante /= total
             else:
                 # Generar probabilidades balanceadas
-                prob_local, prob_empate, prob_visitante = self.data_loader._generar_probabilidades_balanceadas_por_partido(idx)
+                prob_local, prob_empate, prob_visitante = self.data_loader._generar_probabilidades_con_anclas_garantizadas(idx)
             
             partido = {
                 'id': idx,
